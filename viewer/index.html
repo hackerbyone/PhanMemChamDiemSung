@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Automatic Shooting Scoring</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f3f5f7;color:#17202a}
+header{background:#17212b;color:#fff;padding:14px 20px;display:flex;align-items:center;gap:20px}
+header h1{font-size:20px;margin:0}
+.conn{margin-left:auto;font-size:13px}
+.langbtn{background:transparent;border:1px solid #5b6b7f;color:#fff;border-radius:7px;padding:6px 10px;
+ cursor:pointer;font-size:12px;font-weight:700}
+.langbtn:hover{background:#2a3a4d}
+main{padding:16px;max-width:1400px;margin:auto}
+.panel{background:#fff;border-radius:12px;padding:16px;margin-top:16px;box-shadow:0 2px 8px #0001}
+h2{font-size:16px;margin:0 0 12px;color:#455065}
+.lane-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.lane-tab{padding:10px 18px;border-radius:10px;border:2px solid #dfe3e7;background:#fff;cursor:pointer;
+ font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px;color:#17202a}
+.lane-tab.active{border-color:#3b82f6;background:#eff6ff}
+.lane-tab .dot{width:9px;height:9px;border-radius:50%;background:#9ca3af}
+.lane-tab .dot.shooting{background:#d97706}
+.lane-tab .dot.done{background:#16a34a}
+.lane-tab .dot.waiting{background:#9ca3af}
+
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.03em;white-space:nowrap}
+.badge.waiting{background:#e5e7eb;color:#374151}
+.badge.ready{background:#dbeafe;color:#1e40af}
+.badge.shooting{background:#fef3c7;color:#92400e}
+.badge.done{background:#dcfce7;color:#166534}
+.badge.paused{background:#fde68a;color:#92400e}
+.badge.cancelled{background:#fecaca;color:#991b1b}
+.badge.error{background:#fecaca;color:#991b1b}
+.badge.history{background:#ede9fe;color:#5b21b6}
+
+.main-lane-head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px}
+.main-lane-head .title{font-size:24px;font-weight:800;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.main-lane-head .shooter{color:#68737d;font-size:15px;font-weight:400;margin-left:6px}
+.main-lane-head .score-block{text-align:right}
+.main-lane-head .shooter-count{font-size:13px;font-weight:700;color:#3b82f6;background:#eff6ff;border-radius:20px;
+ padding:3px 10px;display:inline-block;margin-bottom:6px;white-space:nowrap}
+.main-lane-head .grand-score{font-size:38px;font-weight:800;text-align:right}
+.main-lane-head .grand-score small{display:block;font-size:12px;font-weight:400;color:#68737d}
+
+.mgr-row{display:flex;align-items:center;gap:8px;margin-left:auto}
+.mgr-form{display:flex;align-items:center;gap:6px}
+.mgr-form input{padding:6px 8px;border-radius:7px;border:1px solid #5b6b7f;background:#0f1720;color:#fff;font-size:12px;width:130px}
+.mgr-badge{font-size:11px;font-weight:700;background:#166534;color:#fff;border-radius:20px;padding:4px 10px}
+.mgr-err{font-size:11px;color:#fca5a5}
+
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.stat-box{background:#f8fafc;border-radius:12px;padding:14px;text-align:center}
+.stat-box .n{font-size:26px;font-weight:800}
+.stat-box .lbl{font-size:12px;color:#68737d;margin-top:2px}
+.band-bar{display:flex;height:14px;border-radius:8px;overflow:hidden;margin-top:6px}
+.band-bar i{display:block;height:100%}
+.band-bar .b-excellent{background:#16a34a}
+.band-bar .b-good{background:#3b82f6}
+.band-bar .b-ok{background:#d97706}
+.band-bar .b-fail{background:#dc2626}
+.band-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:#455065}
+.band-legend span{display:inline-flex;align-items:center;gap:5px}
+.band-legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.history-row{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
+.history-row select{padding:6px 8px;border:1px solid #ccd3da;border-radius:7px;background:#fff;font-size:12px;max-width:320px}
+.livebtn{padding:6px 12px;border-radius:7px;border:1px solid #3b82f6;background:#eff6ff;color:#1d4ed8;
+ cursor:pointer;font-size:12px;font-weight:700}
+
+.target-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.target-card{background:#f8fafc;border-radius:12px;padding:14px;text-align:center;cursor:pointer}
+.target-card:hover{outline:2px solid #c7d2fe}
+.compare-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:10px}
+.compare-img{cursor:default}
+.modal-overlay{position:fixed;inset:0;background:rgba(15,23,32,.6);display:flex;
+ align-items:center;justify-content:center;padding:20px;z-index:1000;overflow:auto}
+.modal-overlay[hidden]{display:none}
+.modal-box{background:#fff;border-radius:14px;padding:20px;box-shadow:0 10px 40px #0005;
+ max-width:900px;width:100%;max-height:calc(100vh - 40px);overflow:auto}
+tr.selected-row{background:#eff6ff}
+tr.correctable{cursor:pointer}
+.target-card .thumb-big{width:100%;max-width:260px;aspect-ratio:1/1;object-fit:contain;border-radius:10px;
+ border:1px solid #dfe3e7;background:#fff;margin:0 auto 10px}
+.target-card .thumb-big.placeholder{display:flex;align-items:center;justify-content:center;color:#b6bec6;font-size:13px}
+.target-card .t-name{font-weight:700;font-size:15px;margin-bottom:2px}
+.target-card .t-total{font-size:26px;font-weight:800;margin:4px 0}
+.target-card .t-last{font-size:12px;color:#68737d}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.card{background:#fff;border-radius:12px;padding:14px;box-shadow:0 2px 8px #0001;cursor:pointer;border:2px solid transparent}
+.card:hover{border-color:#c7d2fe}
+.card.active{border-color:#3b82f6}
+.card .lane{font-size:17px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card .shooter{margin-top:4px;font-size:13px;color:#68737d}
+.card .score{font-size:28px;font-weight:700;margin:6px 0}
+.card .bar{height:7px;background:#e7ebef;border-radius:10px;overflow:hidden}
+.card .bar i{display:block;height:100%;background:#3b82f6}
+.small{font-size:12px;color:#68737d}
+.thumbs-row{display:flex;gap:6px;margin-top:8px}
+.thumb-mini{width:44px;height:44px;object-fit:contain;border-radius:6px;border:1px solid #dfe3e7;background:#fff}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px;border-bottom:1px solid #e6e9ec;text-align:left}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="pageTitle">Hệ Thống Chấm Điểm Bắn Tự Động</h1>
+  <button class="langbtn" id="langBtn" onclick="toggleLang()">EN</button>
+  <div class="mgr-row" id="mgrRow"></div>
+  <span id="conn" class="conn">…</span>
+</header>
+<main>
+
+<div class="lane-tabs" id="laneTabs"></div>
+
+<div class="panel" id="mainLane"></div>
+
+<div class="panel">
+<h2 id="allLanesTitle"></h2>
+<div id="allLanes" class="cards"></div>
+</div>
+
+<div class="panel" id="statsPanel" hidden></div>
+
+<div class="modal-overlay" id="comparePanel" hidden></div>
+
+<div class="panel">
+<h2 id="recentShotsTitle"></h2>
+<div style="overflow:auto"><table><thead><tr>
+ <th id="thLane"></th><th id="thShooter"></th><th id="thTarget"></th>
+ <th id="thScore"></th><th id="thDistance"></th><th id="thTime"></th>
+</tr></thead><tbody id="shots"></tbody></table></div>
+</div>
+
+</main>
+<script>
+// The viewer is served on its own port (e.g. http.server on :8080) which is
+// NOT the same port the FastAPI server listens on (:8000), so we can't just
+// reuse location.origin. Same hostname as the page, but the server's port —
+// overridable with ?server=http://host:port for anything unusual.
+const SERVER_PORT = 8000;
+const API = new URLSearchParams(location.search).get("server")
+  || (location.protocol === "file:"
+      ? "http://127.0.0.1:" + SERVER_PORT
+      : `${location.protocol}//${location.hostname}:${SERVER_PORT}`);
+async function api(path, opt) { return fetch(API + path, opt).then(async r => { if (!r.ok) throw Error(await r.text()); return r.json() }) }
+
+// ---------------------------------------------------------------- i18n ----
+const I18N = {
+  vi: {
+    pageTitle: "Hệ Thống Chấm Điểm Bắn Tự Động",
+    connecting: "Đang kết nối...", live: "● TRỰC TUYẾN", offline: "○ MẤT KẾT NỐI", serverOffline: "MẤT KẾT NỐI SERVER",
+    lane: "Làn", allLanes: "Tất cả các làn", recentShots: "Phát bắn gần đây",
+    thLane: "Làn", thShooter: "Xạ thủ", thTarget: "Bia", thScore: "Điểm", thDistance: "Khoảng cách", thTime: "Thời gian",
+    target: "Bia", total: "tổng", shots: "phát", last: "gần nhất", noShotYet: "chưa bắn",
+    noLanes: "Chưa có làn nào — đang chờ thiết bị đồng bộ.",
+    liveOption: "🔴 Trực tiếp (mới nhất)", history: "Lịch sử", backToLive: "⬅ Quay lại trực tiếp",
+    viewingHistory: "ĐANG XEM LỊCH SỬ", loadingHistory: "Đang tải...",
+    status: {WAITING:"CHỜ",READY:"SẴN SÀNG",RUNNING:"ĐANG BẮN",ACTIVE:"ĐANG BẮN",PAUSED:"TẠM DỪNG",
+             COMPLETED:"HOÀN THÀNH",CANCELLED:"ĐÃ HỦY",ERROR:"LỖI"},
+    shootersShot: "xạ thủ đã bắn",
+    shootersShotAll: "xạ thủ đã bắn (tất cả các làn)", shootersShotLane: "xạ thủ đã bắn (làn này)",
+    managerLogin: "🔒 Quản lý", managerLoginBtn: "Đăng nhập", managerPasswordPh: "Mật khẩu",
+    managerBadge: "👤 QUẢN LÝ", managerStats: "📊 Thống kê", managerLogout: "Đăng xuất",
+    managerWrongPassword: "Sai mật khẩu", managerLoginFailed: "Không đăng nhập được",
+    statsTitle: "Thống kê (chế độ quản lý)",
+    statCommonShots: "Tổng số phát bắn", statCommonSessions: "Tổng số lượt bắn",
+    statCommonShooters: "Xạ thủ đã bắn", statCommonUnits: "Đơn vị", statCommonLanes: "Số làn",
+    statByResult: "Phân loại kết quả (tất cả phát bắn)",
+    statByLane: "Kết quả theo từng làn / từng bia",
+    statByUnit: "Kết quả theo từng đơn vị",
+    bandExcellent: "Xuất sắc (≥9)", bandGood: "Tốt (7–8.9)", bandOk: "Đạt (5–6.9)", bandFail: "Không đạt (<5)",
+    colLane: "Làn", colTarget: "Bia", colUnit: "Đơn vị", colShooters: "Xạ thủ", colSessions: "Lượt bắn",
+    colShots: "Phát bắn",
+    compareTitle: "So sánh ảnh bia", startImageLabel: "Ảnh lúc bắt đầu (chưa bắn)",
+    currentImageLabel: "Ảnh hiện tại / kết thúc", noImage: "Chưa có ảnh",
+    correctedBadge: "Đã sửa", selectShotHint: "Bấm chọn 1 phát bắn bên dưới rồi bấm vào ảnh bên phải để sửa vị trí trúng đích",
+    correctionSaving: "Đang lưu...", correctionFailed: "Sửa không thành công", closeBtn: "Đóng",
+  },
+  en: {
+    pageTitle: "Automatic Shooting Scoring",
+    connecting: "Connecting...", live: "● LIVE", offline: "○ OFFLINE", serverOffline: "SERVER OFFLINE",
+    lane: "Lane", allLanes: "All lanes", recentShots: "Recent shots",
+    thLane: "Lane", thShooter: "Shooter", thTarget: "Target", thScore: "Score", thDistance: "Distance", thTime: "Time",
+    target: "Target", total: "total", shots: "shots", last: "last", noShotYet: "no shot yet",
+    noLanes: "No lanes yet — waiting for an edge to sync.",
+    liveOption: "🔴 Live (latest)", history: "History", backToLive: "⬅ Back to live",
+    viewingHistory: "VIEWING HISTORY", loadingHistory: "Loading...",
+    status: {WAITING:"WAITING",READY:"READY",RUNNING:"SHOOTING",ACTIVE:"SHOOTING",PAUSED:"PAUSED",
+             COMPLETED:"DONE",CANCELLED:"CANCELLED",ERROR:"ERROR"},
+    shootersShot: "shooters have shot",
+    shootersShotAll: "shooters have shot (all lanes)", shootersShotLane: "shooters have shot (this lane)",
+    managerLogin: "🔒 Manager", managerLoginBtn: "Log in", managerPasswordPh: "Password",
+    managerBadge: "👤 MANAGER", managerStats: "📊 Statistics", managerLogout: "Log out",
+    managerWrongPassword: "Wrong password", managerLoginFailed: "Login failed",
+    statsTitle: "Statistics (manager mode)",
+    statCommonShots: "Total shots", statCommonSessions: "Total sessions",
+    statCommonShooters: "Shooters who shot", statCommonUnits: "Units", statCommonLanes: "Lanes",
+    statByResult: "Result classification (all shots)",
+    statByLane: "Results by lane / by target",
+    statByUnit: "Results by unit",
+    bandExcellent: "Excellent (≥9)", bandGood: "Good (7–8.9)", bandOk: "OK (5–6.9)", bandFail: "Fail (<5)",
+    colLane: "Lane", colTarget: "Target", colUnit: "Unit", colShooters: "Shooters", colSessions: "Sessions",
+    colShots: "Shots",
+    compareTitle: "Compare target images", startImageLabel: "Start image (before any shot)",
+    currentImageLabel: "Current / finished image", noImage: "No image yet",
+    correctedBadge: "Corrected", selectShotHint: "Click a shot below, then click on the right-hand image to fix its impact position",
+    correctionSaving: "Saving...", correctionFailed: "Correction failed", closeBtn: "Close",
+  },
+};
+let lang = "vi";
+try{ lang = localStorage.getItem("viewerLang") || "vi"; }catch(e){}
+function t(key){ return I18N[lang][key] ?? key; }
+function toggleLang(){
+  lang = lang === "vi" ? "en" : "vi";
+  try{ localStorage.setItem("viewerLang", lang); }catch(e){}
+  applyStaticText();
+  if (lastState) render(lastState);
+  if (compareTargetId != null) renderCompare();
+}
+function applyStaticText(){
+  document.getElementById("pageTitle").textContent = t("pageTitle");
+  document.getElementById("langBtn").textContent = lang === "vi" ? "EN" : "VI";
+  document.getElementById("allLanesTitle").textContent = t("allLanes");
+  document.getElementById("recentShotsTitle").textContent = t("recentShots");
+  document.getElementById("thLane").textContent = t("thLane");
+  document.getElementById("thShooter").textContent = t("thShooter");
+  document.getElementById("thTarget").textContent = t("thTarget");
+  document.getElementById("thScore").textContent = t("thScore");
+  document.getElementById("thDistance").textContent = t("thDistance");
+  document.getElementById("thTime").textContent = t("thTime");
+  document.getElementById("conn").textContent = t("connecting");
+  renderManagerRow();
+  if (managerToken) renderStats();
+}
+
+// ------------------------------------------------------------- state -----
+let lastState = null;          // latest /api/dashboard (no filters) result
+let selectedLaneId = null;     // which lane tab is active
+let historySessionId = null;   // non-null => main panel shows this frozen past session instead of live
+let historyData = null;        // cached full detail for historySessionId
+let historyRecentShots = null; // shots scoped to historySessionId (from the same session_id fetch)
+let historyListCache = {};     // lane_id -> [{session_id, match_code, status, total_score, ...}, ...]
+
+// ---------------------------------------------------------- manager mode --
+// Persisted across reloads the same way the language preference already is
+// (this file is served from the range's own web server / opened locally --
+// not a Claude-hosted page -- so plain localStorage is fine here).
+let managerToken = null;
+try{ managerToken = localStorage.getItem("managerToken") || null; }catch(e){}
+let managerLoginOpen = false;
+let managerError = null;
+let statsData = null;
+let statsOpen = false;
+
+function renderManagerRow(){
+  const el = document.getElementById("mgrRow");
+  if (managerToken){
+    el.innerHTML = `
+      <span class="mgr-badge">${t("managerBadge")}</span>
+      <button class="langbtn" onclick="toggleStats()">${t("managerStats")}</button>
+      <button class="langbtn" onclick="managerLogout()">${t("managerLogout")}</button>`;
+    return;
+  }
+  if (!managerLoginOpen){
+    el.innerHTML = `<button class="langbtn" onclick="openManagerLogin()">${t("managerLogin")}</button>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="mgr-form">
+      <input type="password" id="mgrPw" placeholder="${t('managerPasswordPh')}"
+             onkeydown="if(event.key==='Enter')managerLogin()">
+      <button class="langbtn" onclick="managerLogin()">${t("managerLoginBtn")}</button>
+      <button class="langbtn" onclick="managerLoginOpen=false;managerError=null;renderManagerRow()">✕</button>
+    </div>
+    ${managerError ? `<span class="mgr-err">${managerError}</span>` : ''}`;
+  const pw = document.getElementById("mgrPw");
+  if (pw) pw.focus();
+}
+function openManagerLogin(){ managerLoginOpen = true; managerError = null; renderManagerRow(); }
+async function managerLogin(){
+  const pw = document.getElementById("mgrPw").value;
+  try{
+    const r = await api("/api/manager/login", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({password:pw})});
+    managerToken = r.token;
+    try{ localStorage.setItem("managerToken", managerToken); }catch(e){}
+    managerLoginOpen = false; managerError = null;
+    renderManagerRow();
+  }catch(e){
+    managerError = t("managerWrongPassword");
+    renderManagerRow();
+  }
+}
+function managerLogout(){
+  const tok = managerToken;
+  managerToken = null; statsData = null; statsOpen = false;
+  try{ localStorage.removeItem("managerToken"); }catch(e){}
+  document.getElementById("statsPanel").hidden = true;
+  renderManagerRow();
+  if (tok) api("/api/manager/logout", {method:"POST", headers:{"X-Manager-Token":tok}}).catch(()=>{});
+}
+function toggleStats(){
+  statsOpen = !statsOpen;
+  document.getElementById("statsPanel").hidden = !statsOpen;
+  if (statsOpen) renderStats();
+}
+async function renderStats(){
+  if (!managerToken) return;
+  try{
+    statsData = await api("/api/stats/overview", {headers:{"X-Manager-Token": managerToken}});
+  }catch(e){
+    // token expired/invalid (e.g. server restarted) -- drop back to logged-out state
+    managerLogout();
+    return;
+  }
+  if (!statsOpen) return;
+  const d = statsData;
+  const bandRow = (r) => {
+    const tot = Math.max(1, r.shots);
+    return `<div class="band-bar">
+      <i class="b-excellent" style="width:${100*r.excellent/tot}%"></i>
+      <i class="b-good" style="width:${100*r.good/tot}%"></i>
+      <i class="b-ok" style="width:${100*r.ok/tot}%"></i>
+      <i class="b-fail" style="width:${100*r.fail/tot}%"></i>
+    </div>`;
+  };
+  const legend = `<div class="band-legend">
+    <span><i style="background:#16a34a"></i>${t("bandExcellent")}</span>
+    <span><i style="background:#3b82f6"></i>${t("bandGood")}</span>
+    <span><i style="background:#d97706"></i>${t("bandOk")}</span>
+    <span><i style="background:#dc2626"></i>${t("bandFail")}</span>
+  </div>`;
+  const c = d.common;
+  document.getElementById("statsPanel").innerHTML = `
+    <h2>${t("statsTitle")}</h2>
+    <div class="stats-grid">
+      <div class="stat-box"><div class="n">${c.total_shots}</div><div class="lbl">${t("statCommonShots")}</div></div>
+      <div class="stat-box"><div class="n">${c.total_sessions}</div><div class="lbl">${t("statCommonSessions")}</div></div>
+      <div class="stat-box"><div class="n">${c.shooters_participated}</div><div class="lbl">${t("statCommonShooters")}</div></div>
+      <div class="stat-box"><div class="n">${c.total_units}</div><div class="lbl">${t("statCommonUnits")}</div></div>
+      <div class="stat-box"><div class="n">${c.total_lanes}</div><div class="lbl">${t("statCommonLanes")}</div></div>
+    </div>
+
+    <h2>${t("statByResult")}</h2>
+    ${bandRow(d.by_result)}
+    ${legend}
+
+    <h2 style="margin-top:18px">${t("statByLane")}</h2>
+    <div style="overflow:auto"><table><thead><tr>
+      <th>${t("colLane")}</th><th>${t("colTarget")}</th><th>${t("colShots")}</th><th></th>
+    </tr></thead><tbody>
+      ${d.by_lane_target.map(r => `<tr>
+        <td>${t("lane")} ${r.lane_number}</td><td>${t("target")} ${r.target_position}</td>
+        <td>${r.shots}</td>
+        <td style="min-width:120px">${bandRow(r)}</td></tr>`).join("")}
+    </tbody></table></div>
+
+    <h2 style="margin-top:18px">${t("statByUnit")}</h2>
+    <div style="overflow:auto"><table><thead><tr>
+      <th>${t("colUnit")}</th><th>${t("colShooters")}</th><th>${t("colSessions")}</th>
+      <th>${t("colShots")}</th><th></th>
+    </tr></thead><tbody>
+      ${d.by_unit.map(r => `<tr>
+        <td>${r.unit_name}</td><td>${r.shooters}</td><td>${r.sessions}</td>
+        <td>${r.shots}</td>
+        <td style="min-width:120px">${bandRow(r)}</td></tr>`).join("")}
+    </tbody></table></div>
+  `;
+}
+
+// ------------------------------------------------- target compare panel ---
+// Lets a shooter (any viewer) see the blank "start" image next to the
+// current/finished image for one target to recheck a possible detection
+// mistake, and lets a logged-in manager click a shot's row then click a new
+// impact point on the image to correct BOTH its score and its x/y position
+// (not just the score) -- see POST /api/shots/{id}/correct on the server.
+// Presented as a modal overlay (#comparePanel is a fixed, full-viewport
+// dimmed backdrop; the actual card is the .modal-box built inside it) --
+// closes via the Close button, Escape, or a click on the dimmed backdrop.
+let compareTargetId = null, compareData = null, compareSelectedShotId = null,
+    compareMsg = null, compareBusy = false;
+
+function openCompare(targetId){
+  compareTargetId = targetId; compareData = null; compareSelectedShotId = null; compareMsg = null;
+  renderCompare();
+  loadCompare();
+}
+function closeCompare(){
+  compareTargetId = null; compareData = null; compareSelectedShotId = null; compareMsg = null;
+  renderCompare();
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && compareTargetId != null) closeCompare(); });
+async function loadCompare(){
+  if (compareTargetId == null) return;
+  const targetId = compareTargetId;
+  try{
+    const d = await api(`/api/targets/${targetId}/detail`);
+    if (compareTargetId === targetId) compareData = d; // ignore a stale response if the panel moved on
+  }catch(e){
+    if (compareTargetId === targetId) compareData = null;
+  }
+  renderCompare();
+}
+function selectShotForCorrection(shotId){
+  if (!managerToken) return;
+  compareSelectedShotId = (compareSelectedShotId === shotId) ? null : shotId;
+  compareMsg = null;
+  renderCompare();
+}
+// Inverse of the rendering geometry edge.py / edge_qt use to draw a hit onto
+// the (square, IMG_PX x IMG_PX) target-face image:
+//   scale = (IMG_PX/2 - 12) / MM_RANGE; cx = cy = IMG_PX/2
+//   px = cx + x_mm*scale ; py = cy - y_mm*scale
+// so clicking at displayed pixel (offsetX,offsetY) on an image shown at
+// displayW x displayH first rescales to the image's natural IMG_PX x IMG_PX
+// space, then solves the two equations above for x_mm/y_mm.
+function pixelToMm(offsetX, offsetY, displayW, displayH){
+  const IMG_PX = 320, MM_RANGE = 225;
+  const scale = (IMG_PX / 2 - 12) / MM_RANGE;
+  const nx = offsetX * (IMG_PX / displayW), ny = offsetY * (IMG_PX / displayH);
+  const cx = IMG_PX / 2, cy = IMG_PX / 2;
+  return { x_mm: (nx - cx) / scale, y_mm: (cy - ny) / scale };
+}
+async function onCompareImageClick(ev){
+  if (!managerToken || !compareSelectedShotId || compareBusy) return;
+  const rect = ev.target.getBoundingClientRect();
+  const { x_mm, y_mm } = pixelToMm(ev.clientX - rect.left, ev.clientY - rect.top, rect.width, rect.height);
+  compareBusy = true; compareMsg = t("correctionSaving"); renderCompare();
+  try{
+    await api(`/api/shots/${compareSelectedShotId}/correct`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json","X-Manager-Token": managerToken},
+      body: JSON.stringify({x_mm, y_mm}),
+    });
+    compareMsg = null;
+    compareSelectedShotId = null;
+    await loadCompare();
+    load().catch(()=>{});       // dashboard totals (target/session scores) changed too
+    if (statsOpen) renderStats();
+  }catch(e){
+    compareMsg = t("correctionFailed");
+  }
+  compareBusy = false;
+  renderCompare();
+}
+function renderCompare(){
+  const el = document.getElementById("comparePanel");
+  if (compareTargetId == null){ el.hidden = true; el.innerHTML = ""; el.onclick = null; return; }
+  el.hidden = false;
+  // Click on the dimmed backdrop itself (not on anything inside the modal
+  // box) closes the panel -- e.target is only the overlay element when the
+  // click didn't land on a child, so this needs no stopPropagation calls
+  // sprinkled through the box's own content.
+  el.onclick = (e) => { if (e.target === el) closeCompare(); };
+  if (!compareData){
+    el.innerHTML = `<div class="modal-box">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0">${t("compareTitle")}</h2>
+        <button class="langbtn" onclick="closeCompare()">${t("closeBtn")}</button>
+      </div><div class="small" style="margin-top:8px">${t("loadingHistory")}</div>
+    </div>`;
+    return;
+  }
+  const tg = compareData.target, shots = compareData.shots || [];
+  const lastShot = shots.length ? shots[shots.length - 1] : null;
+  const currentImg = lastShot ? lastShot.image_path : null;
+  const canCorrect = !!managerToken && !!compareSelectedShotId;
+  el.innerHTML = `
+    <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <h2 style="margin:0">${t("compareTitle")} — ${t("target")} ${tg.target_number}</h2>
+      <button class="langbtn" onclick="closeCompare()">${t("closeBtn")}</button>
+    </div>
+    <div class="compare-grid">
+      <div>
+        <div class="small" style="margin-bottom:6px">${t("startImageLabel")}</div>
+        ${thumb(tg.start_image_path, "thumb-big", t("noImage"))}
+      </div>
+      <div>
+        <div class="small" style="margin-bottom:6px">${t("currentImageLabel")}</div>
+        ${thumb(currentImg, "thumb-big" + (canCorrect ? " compare-img" : ""), t("noImage"),
+                canCorrect ? "onCompareImageClick(event)" : null)}
+      </div>
+    </div>
+    ${managerToken ? `<div class="small" style="margin:8px 0">${compareMsg || t("selectShotHint")}</div>` : ''}
+    <div style="overflow:auto;margin-top:8px"><table><thead><tr>
+      <th>#</th><th>${t("thScore")}</th><th>x_mm</th><th>y_mm</th><th></th>
+    </tr></thead><tbody>
+      ${shots.map(s => `
+        <tr class="${s.shot_id===compareSelectedShotId?'selected-row':''} ${managerToken?'correctable':''}"
+            ${managerToken ? `onclick="selectShotForCorrection(${s.shot_id})"` : ''}>
+          <td>${s.shot_number}</td><td><b>${(+s.score).toFixed(1)}</b></td>
+          <td>${(+s.x_mm).toFixed(1)}</td><td>${(+s.y_mm).toFixed(1)}</td>
+          <td>${s.corrected ? `<span class="badge history">${t("correctedBadge")}</span>` : ''}</td>
+        </tr>`).join("")}
+    </tbody></table></div>
+    </div>
+  `;
+}
+
+function statusLabel(s){ return t("status")[s] || s || "—" }
+function statusClass(s){
+  const c = {WAITING:"waiting",READY:"ready",RUNNING:"shooting",ACTIVE:"shooting",
+             PAUSED:"paused",COMPLETED:"done",CANCELLED:"cancelled",ERROR:"error"};
+  return c[s] || "waiting";
+}
+function badge(s){ return `<span class="badge ${statusClass(s)}">${statusLabel(s)}</span>` }
+function dotClass(s){ const c = statusClass(s); return c === "shooting" ? "shooting" : c === "done" ? "done" : "waiting" }
+function thumb(path, cls, placeholderText, onclickAttr){
+  return path
+    ? `<img class="${cls}" src="${API}${path}" alt="target"${onclickAttr?` onclick="${onclickAttr}"`:''}>`
+    : `<div class="${cls} placeholder">${placeholderText || t("noShotYet")}</div>`;
+}
+function fmtTime(iso){
+  // Same calendar day as "now" -> show only the time (no date clutter, since
+  // during a live session every timestamp is today anyway); a different day
+  // -> show the full date+time so history from an earlier day stays clear.
+  try{
+    const d = new Date(iso), n = new Date();
+    const sameDay = d.getFullYear()===n.getFullYear() && d.getMonth()===n.getMonth() && d.getDate()===n.getDate();
+    const locale = lang==="vi"?"vi-VN":"en-US";
+    return sameDay ? d.toLocaleTimeString(locale) : d.toLocaleString(locale);
+  }catch(e){ return iso||""; }
+}
+
+async function load(){
+  const d = await api("/api/dashboard");
+  lastState = d;
+  render(d);
+}
+
+async function selectLane(laneId){
+  selectedLaneId = laneId;
+  historySessionId = null;   // switching lanes always goes back to live for that lane
+  historyData = null;
+  historyRecentShots = null;
+  if (lastState) render(lastState);
+  loadHistoryList(laneId);   // refresh the history dropdown for the newly selected lane
+}
+
+async function loadHistoryList(laneId){
+  // /api/lanes/{id}/sessions now returns {sessions, shooters_on_lane} instead
+  // of a bare array, so the "Xạ thủ đã bắn" count for the currently-selected
+  // lane comes straight from the server (all-time, total_shots>0) instead of
+  // being derived client-side from whatever happens to be on the live
+  // dashboard -- that mismatch was the "seems not correct" bug.
+  try{
+    historyListCache[laneId] = await api(`/api/lanes/${laneId}/sessions`);
+  }catch(e){ historyListCache[laneId] = {sessions:[], shooters_on_lane:0}; }
+  if (laneId === selectedLaneId && lastState) render(lastState);
+}
+
+async function onHistoryPick(value){
+  if (value === "live"){
+    historySessionId = null; historyData = null; historyRecentShots = null;
+    if (lastState) render(lastState);
+    return;
+  }
+  historySessionId = parseInt(value, 10);
+  historyData = null; historyRecentShots = null;
+  if (lastState) render(lastState); // show "loading" state for the main panel
+  try{
+    const d = await api(`/api/dashboard?session_id=${historySessionId}`);
+    historyData = d.sessions[0] || null;
+    historyRecentShots = d.recent_shots || [];  // already scoped to just this one session
+  }catch(e){ historyData = null; historyRecentShots = []; }
+  if (lastState) render(lastState);
+}
+
+function render(d){
+  const ss = d.sessions;
+  if (!ss.length){
+    document.getElementById("laneTabs").innerHTML = "";
+    document.getElementById("mainLane").innerHTML = `<div class='small'>${t("noLanes")}</div>`;
+    document.getElementById("allLanes").innerHTML = "";
+    document.getElementById("shots").innerHTML = "";
+    return;
+  }
+  if (!ss.some(s => s.lane_id === selectedLaneId)){
+    selectedLaneId = ss[0].lane_id;
+    loadHistoryList(selectedLaneId);
+  }
+
+  document.getElementById("laneTabs").innerHTML = ss.map(s => `
+    <div class="lane-tab ${s.lane_id===selectedLaneId?'active':''}" onclick="selectLane(${s.lane_id})">
+      <span class="dot ${dotClass(s.status)}"></span> ${t("lane")} ${s.lane_number}
+    </div>`).join("");
+
+  const liveMain = ss.find(s => s.lane_id === selectedLaneId);
+  const viewingHistory = historySessionId !== null;
+  const main = viewingHistory ? historyData : liveMain;
+
+  const historyOptions = ((historyListCache[selectedLaneId] || {}).sessions || []).map(h =>
+    `<option value="${h.session_id}" ${h.session_id===historySessionId?'selected':''}>
+       ${fmtTime(h.start_time)} · ${h.shooter_name} · ${(+h.total_score).toFixed(1)}
+     </option>`).join("");
+
+  const historyRow = `
+    <div class="history-row">
+      <select onchange="onHistoryPick(this.value)">
+        <option value="live" ${!viewingHistory?'selected':''}>${t("liveOption")}</option>
+        ${historyOptions}
+      </select>
+      ${viewingHistory ? `<button class="livebtn" onclick="onHistoryPick('live')">${t("backToLive")}</button>` : ''}
+      ${viewingHistory ? `<span class="badge history">${t("viewingHistory")}</span>` : ''}
+    </div>`;
+
+  if (!main){
+    document.getElementById("mainLane").innerHTML = `
+      <div class="main-lane-head">
+        <div class="title">${t("lane")} ${liveMain.lane_number}</div>
+      </div>
+      ${historyRow}
+      <div class="small" style="margin-top:12px">${t("loadingHistory")}</div>`;
+  } else {
+    // Two counts, both server-computed with the SAME "fired >=1 shot,
+    // ever" definition manager statistics use (see server.py), so they can
+    // never disagree with the manager panel the way the old client-side
+    // "distinct shooter_id among today's dashboard rows" count could:
+    //  - shootersTotal:   every shooter who has shot, across ALL lanes/history
+    //  - shootersOnLane:  just the shooters who have shot on THIS lane
+    const shootersTotal = d.shooters_total ?? 0;
+    const shootersOnLane = (historyListCache[selectedLaneId] || {}).shooters_on_lane ?? 0;
+    document.getElementById("mainLane").innerHTML = `
+      <div class="main-lane-head">
+        <div class="title">${t("lane")} ${main.lane_number} ${badge(main.status)}
+          <span class="shooter">${main.shooter_name} · ${main.unit_name || ''}</span>
+        </div>
+        <div class="score-block">
+          <div class="shooter-count">👤 ${shootersTotal} ${t("shootersShotAll")}</div>
+          <div class="shooter-count">👤 ${shootersOnLane} ${t("shootersShotLane")}</div>
+          <div class="grand-score">${(main.total_score||0).toFixed(1)}<small>${t("total")} · ${main.total_shots} ${t("shots")}</small></div>
+        </div>
+      </div>
+      ${historyRow}
+      <div class="target-grid" style="margin-top:14px">${main.targets.map(tg => `
+        <div class="target-card" onclick="openCompare(${tg.target_id})">
+          ${thumb(tg.last_image, "thumb-big")}
+          <div class="t-name">${t("target")} ${tg.target_number} ${badge(tg.status)}</div>
+          <div class="t-total">${(+tg.total_score).toFixed(1)}</div>
+          <div class="t-last">${tg.total_shots} ${t("shots")}${tg.last_score!=null?` · ${t("last")}: ${(+tg.last_score).toFixed(1)}`:''}</div>
+        </div>`).join("")}</div>
+    `;
+  }
+
+  document.getElementById("allLanes").innerHTML = ss.map(s => {
+    const max = Math.max(1, s.total_shots*10), pct = Math.min(100, 100*s.total_score/max);
+    return `<div class="card ${s.lane_id===selectedLaneId?'active':''}" onclick="selectLane(${s.lane_id})">
+      <div class="lane">${t("lane")} ${s.lane_number} ${badge(s.status)}</div>
+      <div class="shooter">${s.shooter_name}</div>
+      <div class="score">${(s.total_score||0).toFixed(1)}</div>
+      <div class="small">${s.total_shots} ${t("shots")}</div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+      <div class="thumbs-row">${s.targets.map(tg=>thumb(tg.last_image,"thumb-mini")).join("")}</div>
+    </div>`;
+  }).join("");
+
+  // Recent shots is scoped to the currently selected shooter/lane, not every
+  // shooter on the range: in history mode that's exactly what the
+  // session_id-scoped fetch already returned; live, filter the all-lanes
+  // list down to the lane currently shown in the main panel above.
+  const scopedShots = viewingHistory
+    ? (historyRecentShots || [])
+    : (d.recent_shots || []).filter(x => liveMain && x.lane_number === liveMain.lane_number);
+  document.getElementById("recentShotsTitle").textContent = main
+    ? `${t("recentShots")} — ${t("lane")} ${main.lane_number} (${main.shooter_name})`
+    : t("recentShots");
+  document.getElementById("shots").innerHTML = scopedShots.slice(0,40).map(x =>
+    `<tr><td>${x.lane_number}</td><td>${x.shooter_name}</td><td>T${x.target_number}</td>
+     <td><b>${(+x.score).toFixed(1)}</b></td><td>${(+x.distance_mm).toFixed(1)} mm</td><td>${fmtTime(x.shot_timestamp)}</td></tr>`).join("");
+}
+
+function connect(){
+  const ws = new WebSocket(API.replace("http","ws") + "/ws");
+  ws.onopen = () => document.getElementById("conn").textContent = t("live");
+  ws.onmessage = () => { load().catch(()=>{}); if (statsOpen) renderStats(); if (compareTargetId != null) loadCompare(); };
+  ws.onclose = () => { document.getElementById("conn").textContent = t("offline"); setTimeout(connect, 1500); };
+}
+
+applyStaticText();
+load().then(() => { if (selectedLaneId) loadHistoryList(selectedLaneId); })
+      .catch(() => document.getElementById("conn").textContent = t("serverOffline"));
+connect();
+setInterval(() => load().catch(()=>{}), 3000);
+setInterval(() => { if (statsOpen) renderStats(); }, 5000);
+</script>
+</body></html>

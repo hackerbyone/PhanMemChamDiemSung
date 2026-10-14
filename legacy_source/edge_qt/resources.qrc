@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/">
+        <!-- Embeds the SAME schema.sql that edge.py and server.py use
+             (one level up, shared by the whole project) so the compiled
+             executable is self-contained and never depends on being run
+             from a particular working directory. Keep this as the single
+             source of truth -- do not fork a separate copy of the schema
+             for the Qt build. -->
+        <file alias="schema.sql">../schema.sql</file>
+    </qresource>
+</RCC>

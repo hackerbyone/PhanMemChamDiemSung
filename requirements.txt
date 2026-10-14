@@ -1,0 +1,9 @@
+ultralytics==8.4.175
+opencv-python==5.0.0.93
+numpy==2.3.5
+scipy==1.17.0
+Pillow==12.3.0
+requests==2.34.2
+fastapi==0.143.0
+uvicorn==0.54.0
+pydantic==2.13.5

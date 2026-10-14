@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>780</width>
+    <height>760</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Edge Simulator (Qt/C++)</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainLayout" stretch="0,0,0,0,0,0,1,0">
+    <item>
+     <widget class="QLabel" name="titleLabel">
+      <property name="text">
+       <string>Edge Simulator (Qt/C++)</string>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <layout class="QHBoxLayout" name="laneRow">
+      <item>
+       <widget class="QLabel" name="laneLabel">
+        <property name="text">
+         <string>Lane:</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QSpinBox" name="laneSpinBox">
+        <property name="minimum">
+         <number>1</number>
+        </property>
+        <property name="maximum">
+         <number>999</number>
+        </property>
+        <property name="value">
+         <number>1</number>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="laneRowSpacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeType">
+         <enum>QSizePolicy::Expanding</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <widget class="QLabel" name="infoLabel">
+      <property name="wordWrap">
+       <bool>true</bool>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QLabel" name="personLabel">
+      <property name="visible">
+       <bool>false</bool>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QGroupBox" name="rosterGroup">
+      <layout class="QVBoxLayout" name="rosterLayout">
+       <item>
+        <widget class="QTableWidget" name="rosterTable">
+         <property name="maximumSize">
+          <size>
+           <width>16777215</width>
+           <height>150</height>
+          </size>
+         </property>
+         <property name="selectionBehavior">
+          <enum>QAbstractItemView::SelectRows</enum>
+         </property>
+         <column>
+          <property name="text">
+           <string/>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string/>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string/>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string/>
+          </property>
+         </column>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="rosterBtnRow">
+         <item>
+          <widget class="QPushButton" name="addRosterBtn"/>
+         </item>
+         <item>
+          <widget class="QPushButton" name="removeRosterBtn"/>
+         </item>
+         <item>
+          <spacer name="rosterBtnSpacing">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeType">
+            <enum>QSizePolicy::Fixed</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>16</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QLabel" name="genShooterCountLabel"/>
+         </item>
+         <item>
+          <widget class="QSpinBox" name="genShooterCount">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>200</number>
+           </property>
+           <property name="value">
+            <number>4</number>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="genUnitCountLabel"/>
+         </item>
+         <item>
+          <widget class="QSpinBox" name="genUnitCount">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>50</number>
+           </property>
+           <property name="value">
+            <number>2</number>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="generateRosterBtn"/>
+         </item>
+         <item>
+          <spacer name="rosterBtnRowSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeType">
+            <enum>QSizePolicy::Expanding</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QLabel" name="rosterHint">
+         <property name="styleSheet">
+          <string notr="true">color:#68737d;font-size:11px;</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <layout class="QHBoxLayout" name="midLayout">
+      <item>
+       <widget class="QLabel" name="imageLabel">
+        <property name="minimumSize">
+         <size>
+          <width>340</width>
+          <height>340</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>340</width>
+          <height>340</height>
+         </size>
+        </property>
+        <property name="frameShape">
+         <enum>QFrame::Box</enum>
+        </property>
+        <property name="text">
+         <string>(no shot yet)</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QVBoxLayout" name="rightPanel">
+        <item>
+         <widget class="QLabel" name="targetLabel"/>
+        </item>
+        <item>
+         <widget class="QLabel" name="shotLabel"/>
+        </item>
+        <item>
+         <widget class="QProgressBar" name="shotProgress">
+          <property name="value">
+           <number>0</number>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="scoreLabel"/>
+        </item>
+        <item>
+         <widget class="QLabel" name="syncLabel"/>
+        </item>
+        <item>
+         <spacer name="rightPanelSpacer">
+          <property name="orientation">
+           <enum>Qt::Vertical</enum>
+          </property>
+          <property name="sizeType">
+           <enum>QSizePolicy::Expanding</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>20</width>
+            <height>40</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <widget class="QPlainTextEdit" name="log">
+      <property name="maximumBlockCount">
+       <number>2000</number>
+      </property>
+      <property name="readOnly">
+       <bool>true</bool>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <layout class="QHBoxLayout" name="btnLayout">
+      <item>
+       <widget class="QPushButton" name="startButton"/>
+      </item>
+      <item>
+       <widget class="QPushButton" name="stopButton">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="btnLayoutSpacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeType">
+         <enum>QSizePolicy::Expanding</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QPushButton" name="resetButton"/>
+      </item>
+     </layout>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
