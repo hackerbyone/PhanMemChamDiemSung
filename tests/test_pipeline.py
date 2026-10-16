@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 import uuid
+from contextlib import closing
 from pathlib import Path
 import numpy as np
 from fastapi import FastAPI,HTTPException
@@ -72,7 +73,7 @@ class Integration(unittest.TestCase):
     def test_local_persistence(self):
         store=Store(self.root/'local');im=read_image(ROOT/'assets/Biaso4.png')
         p,payload=store.save({'detections':self.p['detections']},{'shooter':'Test'},im,im,im)
-        with sqlite3.connect(store.db) as c:self.assertEqual(c.execute('SELECT synced FROM rounds').fetchone()[0],0)
+        with closing(sqlite3.connect(store.db)) as c:self.assertEqual(c.execute('SELECT synced FROM rounds').fetchone()[0],0)
         self.assertTrue((p/'rev_1'/'before.png').exists());self.assertTrue((p/'result.json').exists())
 class Automatic(unittest.TestCase):
     @classmethod
@@ -112,7 +113,7 @@ class Automatic(unittest.TestCase):
             st=Store(t);im=self.template;result={'detections':[]};p,a=st.save(result,{},im,im,im)
             p,b=st.save(result,{},im,im,im,a['id'])
             self.assertEqual(b['revision'],2);self.assertTrue((p/'rev_1'/'after.png').exists())
-            with sqlite3.connect(st.db) as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM rounds').fetchone()[0],1)
+            with closing(sqlite3.connect(st.db)) as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM rounds').fetchone()[0],1)
 
 class Revisions(unittest.TestCase):
     setUp=Integration.setUp
@@ -124,11 +125,18 @@ class Revisions(unittest.TestCase):
         self.p.update(status='REVIEWED',reviewed_at='2026-01-02',revision=2)
         self.p['detections'][0].update(template_point=[130,100],score=8);self.p['total_score']=8
         self.assertEqual(self.post().status_code,200);self.assertTrue(self.post().json()['duplicate'])
-        with sqlite3.connect(self.root/'server.db') as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM real_round_history').fetchone()[0],1)
+        with closing(sqlite3.connect(self.root/'server.db')) as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM real_round_history').fetchone()[0],1)
         self.p['revision']=1;self.assertEqual(self.post().status_code,409)
     def test_revision_cannot_move_shooter(self):
         self.assertEqual(self.post().status_code,200);self.p.update(revision=2,shooter='Other')
         self.assertEqual(self.post().status_code,409)
+    def test_shooting_date_preserved_on_correction(self):
+        self.p.update(shooting_date='2026-10-15',notes='Kiểm tra buổi sáng')
+        self.assertEqual(self.post().status_code,200)
+        self.assertEqual(self.client.get('/api/real-rounds').json()[0]['shooting_date'],'2026-10-15')
+        self.p.update(revision=2,shooting_date='2026-10-16');self.assertEqual(self.post().status_code,409)
+    def test_invalid_shooting_date_rejected(self):
+        self.p['shooting_date']='2026-02-30';self.assertEqual(self.post().status_code,422)
 
 if __name__=='__main__':unittest.main(verbosity=2)
 

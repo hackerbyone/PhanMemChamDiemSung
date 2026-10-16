@@ -1,5 +1,34 @@
 # Chấm điểm tự động từ hai ảnh — v2
 
+## Bổ sung quản lý và tra cứu
+
+Giữ nguyên thuật toán nhận diện/chấm điểm. Bản này bổ sung đủ 5 nhóm chức năng:
+
+1. **Lịch sử & báo cáo**: tìm mã, tên hoặc đơn vị; lọc khoảng ngày, bệ bắn và trạng thái. Nhấp đúp một loạt để mở lại ảnh và kết quả trong tab Loạt bắn. Các thao tác sửa/bỏ/thêm lỗ hoặc xác nhận kiểm tra tiếp tục lưu phiên bản mới của chính mã loạt đó, giữ ảnh và JSON cũ. Nếu loạt đã được sửa bởi một cửa sổ khác, phần mềm yêu cầu mở lại trước khi lưu tiếp.
+2. **Khôi phục loạt dang dở**: khi khởi động, ứng dụng đề nghị mở danh sách ảnh nháp chưa có kết quả. Có thể mở bằng nút Khôi phục loạt dang dở ở tab Lịch sử & báo cáo. Chọn nháp, bấm Khôi phục; nếu đã có ảnh sau thì bấm Tính lại / thử lại. Nếu mới có ảnh trước thì chụp ảnh sau như bình thường. Nút Ẩn nháp chỉ ẩn khỏi danh sách, vẫn giữ ảnh trên đĩa.
+3. **Xuất Excel và in phiếu**: Xuất Excel theo bộ lọc tạo `.xlsx` gồm Loạt bắn, Theo người, Theo đơn vị và Chi tiết lỗ. Tổng hợp DEMO tách khỏi thực tế; các tổng thực tế có bao gồm kết quả chưa duyệt, thể hiện rõ trong báo cáo. Chọn một hoặc nhiều loạt bằng Ctrl/Shift, bấm In phiếu đã chọn để tạo HTML chứa ảnh chú thích và mở trình duyệt. Bấm In phiếu / Lưu PDF rồi chọn máy in hoặc Save as PDF. Phiếu có trạng thái kiểm tra, mã loạt, phiên bản và chỗ ký. Không cần cài Excel để xuất tệp.
+4. **Danh sách người bắn**: thêm, sửa, tìm hoặc nhập danh sách CSV UTF-8; bấm Tải CSV mẫu để lấy mẫu. CSV cần các cột `code,name,unit` hoặc `Mã người bắn,Họ tên,Đơn vị`. Chọn người rồi bấm Chọn để bắn để tự điền thông tin. Mã duy nhất; nhập CSV có mã trùng nhưng khác thông tin sẽ báo lỗi và không nhập một phần. Sửa danh sách không đổi thông tin lịch sử. Người nhập tay được bổ sung vào danh sách sau khi lưu kết quả lần đầu nếu mã chưa tồn tại; DEMO không được thêm.
+5. **Kiểm tra ảnh phóng to**: mở bằng nút ở tab Loạt bắn hoặc nhấp đúp dòng lỗ. Chọn ảnh trước/sau nguyên gốc, ảnh sau đã căn hoặc bia mẫu; bật/tắt vòng điểm và tâm lỗ. Cuộn chuột để phóng to, kéo chuột để di chuyển; chọn dòng hoặc nhấp lỗ để làm nổi vị trí tương ứng. Màn hình thêm/sửa tâm và căn chỉnh thủ công cũng hỗ trợ phóng to, kéo ảnh.
+
+Form loạt bắn có **Ngày bắn (YYYY-MM-DD)** và **Ghi chú**. Ngày mặc định theo múi giờ Việt Nam; thời điểm lưu/chụp vẫn giữ ISO UTC riêng. **Bệ bắn** sử dụng trường `lane` cũ nên vẫn tương thích đồng bộ. **Loạt tiếp theo** giữ người bắn và tăng số loạt; **Người tiếp theo** xóa thông tin người bắn và đặt loạt về 1.
+
+### Cơ sở dữ liệu cục bộ
+
+`data/rounds.db` có hai bảng chính:
+
+| Bảng | Trường |
+|---|---|
+| `shooters` | `code`: mã người bắn (khóa chính); `name`: họ tên; `unit`: đơn vị; `updated_at`: thời điểm cập nhật |
+| `rounds` | `id`: mã loạt UUID (khóa chính); `shooter_code`, `shooter`, `unit`, `shooting_date`: ngày bắn; `series`: loạt; `lane`: bệ; `expected_shots`: số phát dự kiến; `total_holes`: số lỗ tính; `total_score`: tổng điểm; `status`: trạng thái; `notes`: ghi chú; `synced`: đã đồng bộ; `payload`: kết quả đầy đủ |
+
+Thông tin người/đơn vị trong `rounds` là bản chụp tại thời điểm bắn, không tự thay đổi theo danh sách người bắn. `payload` lưu thêm ghi chú, giờ chụp, cấu hình bia, tọa độ lỗ, cảnh báo và phiên bản. Ứng dụng tự thêm cột và chỉ mục cho cơ sở dữ liệu v2 cũ; không xóa ảnh, sửa payload cũ hoặc đặt lại trạng thái đồng bộ. Với bản ghi chưa có ngày bắn, ngày tra cứu suy ra từ giờ nhận ảnh trước, hoặc giờ tạo kết quả, quy đổi sang giờ Việt Nam.
+
+Ảnh nháp mới giữ cả cấu hình và hash mẫu để khôi phục đúng hình học. Khi mở lại loạt có hash ảnh mẫu khác ảnh hiện tại, ứng dụng yêu cầu khôi phục đúng ảnh mẫu trước khi sửa. Nháp cũ chưa lưu cấu hình dùng cấu hình mẫu hiện tại. Đây là quản lý cục bộ; danh sách người bắn không tự đồng bộ thành danh bạ chung trên server.
+
+Kiểm thử giao diện tùy chọn trên Windows có Tcl/Tk: đặt `RUN_DESKTOP_TESTS=1` rồi chạy bộ unittest như cuối tài liệu. Kiểm thử dùng thư mục tạm, không mở camera hay ghi dữ liệu thật.
+
+## Luồng chấm điểm
+
 Bản này thay luồng nhiều thao tác của v1 bằng:
 
 **Chọn người bắn → chụp trước → chụp sau → tự xem và lưu kết quả.**
@@ -22,7 +51,7 @@ Nếu vẫn lỗi cài Python, mở CMD chạy `py install 3.12`, rồi chạy l
 
 - **1. Chụp TRƯỚC**: lưu trạng thái bia trước loạt ngay vào đĩa, khóa thông tin người/loạt để tránh đổi nhầm.
 - **2. Chụp SAU & tính điểm**: lưu ảnh sau ngay; tự căn chỉnh, nhận diện, đối chiếu, tính điểm và lưu kết quả. Không có nút Phân tích hoặc Lưu bắt buộc nữa.
-- **Loạt mới**: mở lượt tiếp theo, chỉnh thông tin người bắn khi cần, chụp lại ảnh trước mới.
+- **Loạt tiếp theo**: giữ người bắn, tăng số loạt và chụp ảnh trước mới. **Người tiếp theo**: bắt đầu loạt 1 với người khác; có thể chọn từ danh sách.
 
 Nếu có sẵn ảnh, dùng Mở ảnh trước rồi Mở ảnh sau & tính điểm. Mở ảnh sau cũng tự chạy. Nhập ảnh chỉ lưu thời gian nhập; không giả định đó là thời điểm chụp gốc. Ảnh đầu phải thuộc chính tờ bia đang dùng, không thay bằng ảnh mẫu khi chấm thật.
 
@@ -68,7 +97,7 @@ Bản v2 cập nhật bảng `real_rounds` và thêm `real_round_history` cho c�
 ## Tệp dữ liệu
 
 - `target_config.json`: cấu hình tự tìm, hash ảnh mẫu, chất lượng khớp vòng, xác nhận lần đầu; thay ảnh mẫu làm hết hiệu lực cache.
-- `data/drafts/<UUID>/before.png`, `after.png`, `metadata.json`: ảnh chụp được lưu ngay. Nếu xử lý lỗi hoặc đóng ứng dụng, mở lại hai ảnh này bằng nút Mở ảnh và nhập đúng thông tin để khôi phục thủ công.
+- `data/drafts/<UUID>/before.png`, `after.png`, `metadata.json`: ảnh chụp được lưu ngay. Dùng danh sách Khôi phục loạt dang dở để tiếp tục cùng mã loạt và thông tin đã lưu.
 - `data/<UUID>/rev_N/`: hai ảnh nguyên hình không ghi đè chú thích, ảnh chú thích riêng và kết quả JSON của từng phiên bản.
 - `data/<UUID>/result.json`: bản mới nhất; `data/rounds.db`: kết quả và trạng thái đồng bộ.
 - `server/server.db`, `server/images/real/`: bản nhận trên server; ảnh các phiên bản được giữ riêng.

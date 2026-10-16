@@ -6,6 +6,7 @@ import queue
 import threading
 import uuid
 import webbrowser
+from datetime import datetime,date
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk,filedialog,messagebox
@@ -13,17 +14,20 @@ import cv2
 import numpy as np
 from PIL import Image,ImageTk
 from core import read_image,sha,validate_config,overlay,analyze,Detector,score_point
-from storage import Store,utc,atomic_json
+from storage import Store,utc,atomic_json,LOCAL_TZ
 from template_geometry import load_or_extract
 from picker import Picker
+from management import Management
+from image_viewer import Inspection
 ROOT=Path(__file__).resolve().parents[1]
 
-class App(tk.Tk):
+class App(Management,tk.Tk):
     def __init__(self):
         super().__init__();self.title('Chấm điểm bia — Tự động v2 / CPU');self.geometry(f'1150x{min(850,self.winfo_screenheight()-90)}');self.minsize(900,620)
-        self.template=read_image(ROOT/'assets/Biaso4.png');self.config_path=ROOT/'target_config.json';self.config=None
+        self.template_path=ROOT/'assets/Biaso4.png';self.template=read_image(self.template_path);self.config_path=ROOT/'target_config.json';self.config=None;self.default_config=None
         self.before_image=None;self.after_image=None;self.result=None;self.busy=False;self.cap=None;self.frame=None
         self.detector=None;self.pairs=None;self.round_id=None;self.meta=None;self.saved=False;self.messages=queue.Queue();self.store=Store(ROOT/'data')
+        self.expected_revision=None;self.inspector=None;self.recovery_offered=False
         self.vars={};self.identity_entries=[];self.photos=[]
         style=ttk.Style();style.configure('Title.TLabel',font=('Segoe UI',17,'bold'));style.configure('TButton',padding=6)
         ttk.Label(self,text='Chấm điểm tự động từ hai ảnh',style='Title.TLabel').pack(anchor='w',padx=16,pady=(12,3))
@@ -36,13 +40,16 @@ class App(tk.Tk):
         scroll.bind('<Configure>',lambda e:scroll.itemconfigure(content,width=e.width))
         self.bind('<MouseWheel>',lambda e:scroll.yview_scroll(-int(e.delta/120),'units') if self.notebook.index('current')==0 else None)
         form=ttk.Frame(main);form.pack(fill='x',pady=7)
-        for i,(key,label,default) in enumerate([('shooter_code','Mã người bắn','S01'),('shooter','Họ tên',''),('unit','Đơn vị',''),('lane','Làn','1'),('series','Loạt','1'),('expected','Số phát (nếu biết)','')]):
+        for i,(key,label,default) in enumerate([('shooter_code','Mã người bắn','S01'),('shooter','Họ tên',''),('unit','Đơn vị',''),('lane','Bệ bắn','1'),('series','Loạt','1'),('expected','Số phát (nếu biết)','')]):
             ttk.Label(form,text=label).grid(row=0,column=i,sticky='w',padx=5);v=tk.StringVar(value=default);self.vars[key]=v
             e=ttk.Entry(form,textvariable=v,width=17 if i<3 else 11);e.grid(row=1,column=i,padx=5,pady=4);self.identity_entries.append(e)
+        for col,(key,label,default,width) in enumerate([('shooting_date','Ngày bắn (YYYY-MM-DD)',datetime.now(LOCAL_TZ).date().isoformat(),22),('notes','Ghi chú','',45)]):
+            ttk.Label(form,text=label).grid(row=2,column=col*2,columnspan=2,sticky='w',padx=5,pady=(5,0));v=tk.StringVar(value=default);self.vars[key]=v
+            e=ttk.Entry(form,textvariable=v,width=width);e.grid(row=3,column=col*2,columnspan=2,sticky='w',padx=5,pady=4);self.identity_entries.append(e)
         bar=ttk.Frame(main);bar.pack(fill='x')
-        for name,cmd in [('Mở / đóng camera',self.camera),('1. Chụp TRƯỚC',lambda:self.capture('before')),('2. Chụp SAU & tính điểm',lambda:self.capture('after')),('Loạt mới',self.reset)]:self.button(bar,name,cmd).pack(side='left',padx=4)
+        for name,cmd in [('Mở / đóng camera',self.camera),('1. Chụp TRƯỚC',lambda:self.capture('before')),('2. Chụp SAU & tính điểm',lambda:self.capture('after')),('Loạt tiếp theo',self.reset),('Người tiếp theo',lambda:self.reset(new_shooter=True))]:self.button(bar,name,cmd).pack(side='left',padx=4)
         files=ttk.Frame(main);files.pack(fill='x',pady=5)
-        for name,cmd in [('Mở ảnh trước',lambda:self.load('before')),('Mở ảnh sau & tính điểm',lambda:self.load('after')),('Thử hai ảnh đã gửi',self.demo)]:self.button(files,name,cmd).pack(side='left',padx=4)
+        for name,cmd in [('Mở ảnh trước',lambda:self.load('before')),('Mở ảnh sau & tính điểm',lambda:self.load('after')),('Thử hai ảnh đã gửi',self.demo),('Tính lại / thử lại',self.run_analysis),('Kiểm tra ảnh phóng to',self.open_inspection)]:self.button(files,name,cmd).pack(side='left',padx=4)
         ttk.Label(main,text='Ảnh được lưu ngay. Khi nhận ảnh sau, hệ thống tự căn chỉnh → YOLO → đối chiếu → tính điểm → lưu.').pack(anchor='w',padx=5,pady=5)
         panels=ttk.Frame(main);panels.pack(fill='x');self.views=[]
         for label in ['Camera / ảnh trước','Ảnh sau','Điểm trên bia mẫu']:
@@ -51,6 +58,8 @@ class App(tk.Tk):
         self.tree=ttk.Treeview(main,columns=('take','xy','score','conf','status'),show='headings',height=5)
         for key,label,width in [('take','Tính loạt này',85),('xy','Tâm trên mẫu (px)',150),('score','Điểm',60),('conf','Tin cậy',70),('status','Đối chiếu / lưu ý',460)]:self.tree.heading(key,text=label);self.tree.column(key,width=width)
         self.tree.pack(fill='both',expand=True,padx=5);self.tree.bind('<Escape>',lambda e:self.tree.selection_remove(*self.tree.selection()))
+        self.tree.bind('<<TreeviewSelect>>',lambda e:self.inspector.render() if self.inspector and self.inspector.winfo_exists() else None)
+        self.tree.bind('<Double-1>',lambda e:self.guard(self.open_inspection))
         self.button(main,'Mở kết quả trên Server',lambda:webbrowser.open(self.url.get().rstrip('/')+'/real')).pack(anchor='e',pady=5)
         self.url=tk.StringVar(value='http://127.0.0.1:8000');self.password=tk.StringVar();self.auto_sync=tk.BooleanVar(value=True)
         self.vars['camera']=tk.StringVar(value='0');self.vars['confidence']=tk.StringVar(value='.25');self.vars['radius']=tk.StringVar(value='12')
@@ -63,6 +72,7 @@ class App(tk.Tk):
         for row,(name,cmd) in enumerate([('Xem / xác nhận bia mẫu',self.confirm_template),('Tự nhận dạng lại bia mẫu',self.rebuild_template),('Căn chỉnh thủ công khi tự động thất bại',self.manual),('Xem hai ảnh chồng với mẫu',self.inspect),('Đổi tính / bỏ lỗ đang chọn',self.toggle),('Thêm / sửa tâm lỗ trên mẫu',self.edit_hole),('Xác nhận đã kiểm tra kết quả',self.review)]):self.button(tools,name,cmd).grid(row=row,column=0,sticky='w',padx=8,pady=3)
         ttk.Label(tools,text='Chọn dòng ở tab Loạt bắn rồi sửa tại đây.\nNhấn Escape trong bảng để bỏ chọn trước khi thêm lỗ.\nLỗ trúng chồng hoàn toàn không thể đếm chắc chắn từ hai ảnh.',wraplength=460).grid(row=0,column=1,rowspan=5,padx=15)
         self.status=tk.StringVar(value='Đang tìm đường bao và các vòng điểm…');ttk.Label(self,textvariable=self.status,wraplength=1100).pack(fill='x',padx=16,pady=(0,10))
+        self.build_management()
         self.after(100,self.poll);self.protocol('WM_DELETE_WINDOW',self.close)
         self.task(lambda:load_or_extract(ROOT/'assets/Biaso4.png',self.config_path),self.geometry_done,'Đang nhận dạng bia mẫu…')
     def button(self,parent,label,func):return ttk.Button(parent,text=label,command=lambda:self.guard(func))
@@ -86,15 +96,17 @@ class App(tk.Tk):
         except queue.Empty:pass
         self.after(100,self.poll)
     def geometry_done(self,c):
-        self.config=c;self.show(self.views[2],overlay(self.template,c));self.summary.set('Bia mẫu đã có đường bao và 5 vòng điểm tự động.')
+        self.config=c;self.default_config=copy.deepcopy(c);self.show(self.views[2],overlay(self.template,c));self.summary.set('Bia mẫu đã có đường bao và 5 vòng điểm tự động.')
         if not c.get('confirmed'):self.confirm_template()
         else:self.status.set('Sẵn sàng. Điền người bắn rồi chụp ảnh trước.')
+        if not self.recovery_offered:self.recovery_offered=True;self.after(150,lambda:self.guard(self.offer_recovery))
     def confirm_template(self):
         if self.config is None:raise ValueError('Chưa tạo được cấu hình bia mẫu')
         # Only one visual check, no point-by-point calibration.
         Picker(self,overlay(self.template,self.config),'Kiểm tra một lần: đường bao xanh và các vòng vàng có khớp bia? Đóng cửa sổ để trả lời.',0,0)
         if messagebox.askyesno('Xác nhận mẫu một lần','Đường bao và các vòng tự tìm đã khớp ảnh mẫu?\nSau khi xác nhận, các loạt sau dùng lại cấu hình này.'):
             self.config['confirmed']=True;self.config['confirmed_at']=utc();atomic_json(self.config_path,self.config);self.status.set('Đã xác nhận mẫu. Không cần hiệu chỉnh lại cho mỗi loạt.')
+            self.default_config=copy.deepcopy(self.config)
         else:self.status.set('Mẫu chưa xác nhận. Kiểm tra ảnh mẫu hoặc chọn Tự nhận dạng lại. Chưa chấm điểm.')
     def rebuild_template(self):
         if self.before_image is not None:raise ValueError('Hãy kết thúc hoặc bỏ loạt hiện tại trước khi đổi cấu hình')
@@ -118,16 +130,21 @@ class App(tk.Tk):
         self.after(100,self.tick)
     def read_meta(self):
         m={k:self.vars[k].get().strip() for k in ['shooter_code','shooter','unit','lane','series']}
-        if any(not v for v in m.values()):raise ValueError('Điền mã, họ tên, đơn vị, làn và loạt trước khi chụp')
+        if any(not v for v in m.values()):raise ValueError('Điền mã, họ tên, đơn vị, bệ bắn và loạt trước khi chụp')
         m['lane']=int(m['lane']);m['series']=int(m['series']);e=self.vars['expected'].get().strip();m['expected_shots']=int(e) if e else None
-        if m['lane']<1 or m['series']<1 or (m['expected_shots'] is not None and m['expected_shots']<0):raise ValueError('Làn/loạt phải dương; số phát không âm')
+        if m['lane']<1 or m['series']<1 or (m['expected_shots'] is not None and m['expected_shots']<0):raise ValueError('Bệ/loạt phải dương; số phát không âm')
+        try:m['shooting_date']=date.fromisoformat(self.vars['shooting_date'].get().strip()).isoformat()
+        except ValueError:raise ValueError('Ngày bắn phải là ngày hợp lệ dạng YYYY-MM-DD')
+        if any(len(m[k])>200 for k in ('shooter_code','shooter','unit')):raise ValueError('Mã, họ tên, đơn vị tối đa 200 ký tự')
+        m['notes']=self.vars['notes'].get().strip()
         return m
     def set_image(self,kind,im,source):
         if not self.config or not self.config.get('confirmed'):raise ValueError('Xem và xác nhận bia mẫu một lần ở tab Thiết lập')
-        if self.saved:raise ValueError('Loạt đã lưu; bấm Loạt mới để chụp tiếp. Muốn sửa kết quả, dùng tab Thiết lập.')
+        if self.saved:raise ValueError('Loạt đã lưu; bấm Loạt tiếp theo hoặc Người tiếp theo để chụp tiếp. Muốn sửa, dùng tab Thiết lập.')
         if kind=='before':
-            if self.before_image is not None:raise ValueError('Đã có ảnh trước. Bấm Loạt mới nếu muốn thay.')
+            if self.before_image is not None:raise ValueError('Đã có ảnh trước. Bấm Loạt tiếp theo nếu muốn bắt đầu lại.')
             self.meta=self.read_meta();self.meta['capture_sources']={'before':source};self.meta['before_acquired_at']=utc();self.round_id=str(uuid.uuid4())
+            self.meta['_template_sha256']=sha(self.template_path);self.meta['_draft_config']=copy.deepcopy(self.config)
             self.before_image=im.copy()
             for e in self.identity_entries:e.configure(state='disabled')
         else:
@@ -143,28 +160,35 @@ class App(tk.Tk):
         p=filedialog.askopenfilename(filetypes=[('Ảnh','*.png *.jpg *.jpeg *.bmp')])
         if p:self.set_image(kind,read_image(p),'file:'+Path(p).name)
     def demo(self):
-        if self.before_image is not None:raise ValueError('Bấm Loạt mới trước khi thử ảnh mẫu')
+        if self.before_image is not None:raise ValueError('Bấm Loạt tiếp theo trước khi thử ảnh mẫu')
         for k,v in {'shooter_code':'DEMO','shooter':'Thử ảnh mẫu','unit':'DEMO'}.items():self.vars[k].set(v)
         self.set_image('before',self.template,'reference_template_demo')
         self.meta['demo']=True
         self.set_image('after',read_image(ROOT/'assets/2.Ket_thuc_New68.bmp'),'sample_after_demo')
     def run_analysis(self):
         if self.before_image is None or self.after_image is None:raise ValueError('Cần đủ hai ảnh')
+        if not self.config or not self.config.get('confirmed'):raise ValueError('Cấu hình bia của loạt chưa được xác nhận')
+        if self.saved and not messagebox.askyesno('Tính lại loạt','Tính lại sẽ thay các hiệu chỉnh hiện tại bằng kết quả nhận diện mới và lưu phiên bản tiếp theo. Tiếp tục?'):return
         conf=float(self.vars['confidence'].get());radius=float(self.vars['radius'].get())
         if not 0<conf<1 or not 0<radius<=100:raise ValueError('Ngưỡng YOLO phải trong (0,1), khoảng ghép trong (0,100]')
         def work():
             if self.detector is None:self.detector=Detector(ROOT/'assets/best.pt')
             r=analyze(self.before_image,self.after_image,self.template,self.config,self.detector,conf,radius,self.pairs)
             r['model_sha256']=sha(ROOT/'assets/best.pt');count=sum(x['selected'] for x in r['detections'])
-            if self.meta['expected_shots'] is not None and count!=self.meta['expected_shots']:r['warnings'].append('Số lỗ mới khác số phát dự kiến')
+            if self.meta.get('expected_shots') is not None and count!=self.meta['expected_shots']:r['warnings'].append('Số lỗ mới khác số phát dự kiến')
             if self.meta.get('demo'):r['warnings'].append('Ảnh trước là mẫu tham chiếu, không phải ảnh đầu loạt thực tế');r['status']='DEMO'
             elif r['warnings']:r['status']='NEEDS_REVIEW'
             return r
         self.task(work,self.analysis_done,'Đang căn chỉnh hai ảnh, nhận diện YOLO và tính điểm trên mẫu…')
-    def analysis_done(self,result):self.result=result;self.persist();self.refresh()
+    def analysis_done(self,result):
+        self.meta.pop('reviewed_at',None);self.result=result;self.persist();self.refresh()
     def persist(self):
         self.meta['processed_at']=utc()
-        folder,payload=self.store.save(self.result,self.meta,self.before_image,self.after_image,overlay(self.template,self.config,self.result['detections']),self.round_id)
+        folder,payload=self.store.save(self.result,self.meta,self.before_image,self.after_image,overlay(self.template,self.config,self.result['detections']),self.round_id,expected_revision=self.expected_revision)
+        self.result=payload;self.expected_revision=payload['revision']
+        if not self.meta.get('demo'):
+            row={'code':self.meta['shooter_code'],'name':self.meta['shooter'],'unit':self.meta['unit']}
+            if not any(r['code']==row['code'] for r in self.store.list_shooters()):self.store.save_shooters([row]);self.refresh_roster()
         self.saved=True;self.status.set('Đã tự lưu ảnh và kết quả: '+str(folder))
         if self.auto_sync.get() and self.password.get():self.sync()
     def refresh(self):
@@ -173,11 +197,17 @@ class App(tk.Tk):
         for i,h in enumerate(holes):
             label='Lỗ cũ' if h.get('matched_before') is not None else 'Mới'
             if h.get('issues'):label+=' • '+'; '.join(h['issues'])
-            self.tree.insert('','end',iid=str(i),values=('Có' if h['selected'] else 'Bỏ',[round(v,1) for v in h['template_point']],h['score'],f"{h['confidence']:.2f}",label))
+            self.tree.insert('','end',iid=str(i),values=('Có' if h['selected'] else 'Bỏ',[round(v,1) for v in h['template_point']],h['score'],f"{h.get('confidence',0):.2f}",label))
         self.show(self.views[2],overlay(self.template,self.config,holes))
         count=sum(h['selected'] for h in holes);total=sum(h['score'] for h in holes if h['selected'])
         label={'AUTO':'Tự động','NEEDS_REVIEW':'Cần kiểm tra','REVIEWED':'Đã kiểm tra','DEMO':'Thử nghiệm ảnh mẫu'}[self.result['status']]
         self.summary.set(f'{label} • {count} lỗ mới được tính • {total} điểm • '+(' | '.join(self.result['warnings'][:2])+(' …' if len(self.result['warnings'])>2 else '') if self.result['warnings'] else 'Đã lưu.'))
+        self.refresh_history_safely()
+        if self.inspector and self.inspector.winfo_exists():self.inspector.update_data()
+    def open_inspection(self):
+        if not self.result:raise ValueError('Chưa có kết quả; chụp đủ hai ảnh và tính điểm trước')
+        if self.inspector and self.inspector.winfo_exists():self.inspector.lift();return
+        self.inspector=Inspection(self)
     def manual(self):
         if self.before_image is None or self.after_image is None:raise ValueError('Cần đủ hai ảnh')
         pairs=[]
@@ -195,7 +225,7 @@ class App(tk.Tk):
             Picker(self,cv2.addWeighted(im,.5,self.template,.5,0),'Ảnh '+kind+' chồng với mẫu: kiểm tra các đường nét có khớp không',0,0)
     def changed(self):
         self.result['status']='DEMO' if self.meta.get('demo') else 'NEEDS_REVIEW'
-        self.meta.pop('reviewed_at',None);self.result['warnings'].append('Kết quả đã sửa, chưa xác nhận kiểm tra');self.persist();self.refresh()
+        self.meta.pop('reviewed_at',None);self.result.pop('reviewed_at',None);self.result['warnings'].append('Kết quả đã sửa, chưa xác nhận kiểm tra');self.persist();self.refresh()
     def toggle(self):
         if not self.result:return
         selected=self.tree.selection()
@@ -220,13 +250,25 @@ class App(tk.Tk):
     def sync(self):
         if not self.password.get():raise ValueError('Nhập mật khẩu quản lý trong Thiết lập để gửi lên server')
         url=self.url.get().strip();pw=self.password.get()
-        self.task(lambda:self.store.sync(url,pw),lambda n:self.status.set(f'Đã gửi {n} loạt. Kết quả nằm ở {url}/real'),'Đang gửi kết quả; nếu mất mạng dữ liệu vẫn được giữ…')
-    def reset(self):
-        if self.before_image is not None and not self.saved and not messagebox.askyesno('Loạt mới','Loạt chưa xử lý xong. Ảnh đã lưu nháp; bắt đầu loạt mới?'):return
+        def done(n):self.refresh_history_safely();self.status.set(f'Đã gửi {n} loạt. Kết quả nằm ở {url}/real')
+        self.task(lambda:self.store.sync(url,pw),done,'Đang gửi kết quả; nếu mất mạng dữ liệu vẫn được giữ…')
+    def clear_round(self):
+        if self.inspector and self.inspector.winfo_exists():self.inspector.destroy()
+        self.inspector=None;self.expected_revision=None
         self.before_image=None;self.after_image=None;self.result=None;self.pairs=None;self.round_id=None;self.saved=False;self.meta=None
+        self.config=copy.deepcopy(self.default_config)
         for e in self.identity_entries:e.configure(state='normal')
-        self.vars['series'].set(str(int(self.vars['series'].get())+1));self.tree.delete(*self.tree.get_children());self.summary.set('Loạt mới: chọn người bắn và chụp ảnh trước.')
-        for v in self.views[:2]:v.configure(image='')
+        self.tree.delete(*self.tree.get_children())
+        for v in self.views:v.configure(image='')
+        if self.config:self.show(self.views[2],overlay(self.template,self.config))
+    def reset(self,new_shooter=False):
+        if not self.may_replace_round():return False
+        try:series=int(self.vars['series'].get())+1
+        except ValueError:series=1
+        self.clear_round();self.vars['series'].set('1' if new_shooter else str(series));self.vars['shooting_date'].set(datetime.now(LOCAL_TZ).date().isoformat());self.vars['notes'].set('')
+        if new_shooter:
+            for key in ('shooter_code','shooter','unit','expected'):self.vars[key].set('')
+        self.summary.set('Chọn người bắn và chụp ảnh trước.');self.status.set('Loạt mới. Có thể chọn người từ tab Danh sách người bắn.');return True
     def close(self):
         if self.busy:messagebox.showinfo('Đang xử lý','Đợi xử lý hoặc gửi dữ liệu xong rồi đóng.');return
         if self.cap:self.cap.release()

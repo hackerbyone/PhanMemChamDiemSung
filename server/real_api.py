@@ -6,6 +6,8 @@ import json
 import sqlite3
 import sys
 import uuid
+from contextlib import contextmanager
+from datetime import date
 from pathlib import Path
 from PIL import Image
 from fastapi import Depends,HTTPException
@@ -21,11 +23,15 @@ class Upload(BaseModel):
 
 
 def install(app,require_manager,db_path,images_dir):
+    @contextmanager
     def connect():
         c=sqlite3.connect(db_path);c.row_factory=sqlite3.Row
-        c.execute('CREATE TABLE IF NOT EXISTS real_rounds(id TEXT PRIMARY KEY,created_at TEXT,payload TEXT,digest TEXT)')
-        c.execute('CREATE TABLE IF NOT EXISTS real_round_history(id TEXT,revision INTEGER,payload TEXT,digest TEXT,PRIMARY KEY(id,revision))')
-        c.commit();return c
+        try:
+            c.execute('CREATE TABLE IF NOT EXISTS real_rounds(id TEXT PRIMARY KEY,created_at TEXT,payload TEXT,digest TEXT)')
+            c.execute('CREATE TABLE IF NOT EXISTS real_round_history(id TEXT,revision INTEGER,payload TEXT,digest TEXT,PRIMARY KEY(id,revision))')
+            c.commit()
+            with c:yield c
+        finally:c.close()
     @app.get('/real')
     def viewer():return FileResponse(Path(__file__).resolve().parents[1]/'viewer/real.html')
     @app.post('/api/real-rounds')
@@ -41,6 +47,7 @@ def install(app,require_manager,db_path,images_dir):
             revision=p.get('revision',1)
             if type(revision) is not int or revision<1:raise ValueError('Phiên bản không hợp lệ')
             if int(p['lane'])<1 or int(p['series'])<1:raise ValueError('Làn/loạt không hợp lệ')
+            if 'shooting_date' in p:date.fromisoformat(p['shooting_date'])
             if len(p['detections'])>1000:raise ValueError('Quá nhiều lỗ')
             validate_config(p['config'])
             if not p['config'].get('confirmed'):raise ValueError('Cấu hình chưa duyệt')
@@ -70,6 +77,7 @@ def install(app,require_manager,db_path,images_dir):
                 if revision<=oldrev:raise HTTPException(409,'Phiên bản này đã có nội dung khác hoặc đã cũ')
                 for key in ['shooter_code','shooter','unit','lane','series','created_at']:
                     if p.get(key)!=previous.get(key):raise HTTPException(409,'Không đổi định danh người/loạt khi sửa điểm')
+                if previous.get('shooting_date') and p.get('shooting_date')!=previous['shooting_date']:raise HTTPException(409,'Không đổi ngày bắn khi sửa điểm')
                 c.execute('INSERT OR IGNORE INTO real_round_history VALUES(?,?,?,?)',(ident,oldrev,old['payload'],old['digest']))
             folder=Path(images_dir)/'real'/ident/f'rev_{revision}';folder.mkdir(parents=True,exist_ok=True)
             for name,data in raw.items():(folder/(name+'.png')).write_bytes(data)
@@ -80,7 +88,7 @@ def install(app,require_manager,db_path,images_dir):
     def listing():
         with connect() as c:
             rows=c.execute('SELECT payload FROM real_rounds ORDER BY created_at DESC LIMIT 200').fetchall()
-        keys=['id','created_at','shooter_code','shooter','unit','lane','series','total_score','total_holes','status','revision']
+        keys=['id','created_at','shooting_date','shooter_code','shooter','unit','lane','series','total_score','total_holes','status','revision']
         return [{k:json.loads(r['payload']).get(k) for k in keys} for r in rows]
     @app.get('/api/real-rounds/{ident}')
     def detail(ident:str):

@@ -1,0 +1,7 @@
+__pycache__/
+.venv/
+.test-deps/
+.test-output/
+data/
+server/server.db*
+server/images/

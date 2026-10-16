@@ -1,6 +1,6 @@
 {
   "algorithm": "bia4-auto-2.0",
-  "confirmed": false,
+  "confirmed": true,
   "center": [
     450.8152030280301,
     452.7226498575279
@@ -132,5 +132,6 @@
     900
   ],
   "geometry_method": "otsu_row_filled_outline+hough+radial_contrast+joint_robust_circle_fit",
-  "template_sha256": "6b6b90d0420cec4663836123827f08ba0cc4c001956e2796d95ef080e50c7a84"
+  "template_sha256": "6b6b90d0420cec4663836123827f08ba0cc4c001956e2796d95ef080e50c7a84",
+  "confirmed_at": "2026-10-15T16:57:03.334101+00:00"
 }
