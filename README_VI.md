@@ -139,3 +139,12 @@ Các thư viện được ghim trong `requirements.txt`; PyTorch dùng bản CPU
 - https://docs.opencv.org/4.x/d4/d70/tutorial_hough_circle.html
 - https://docs.opencv.org/4.x/d1/de0/tutorial_py_feature_homography.html
 - https://docs.ultralytics.com/modes/predict/
+
+## Bổ sung: Hiển thị thứ tự lượt người bắn trên giao diện
+
+- Tab **Loạt bắn** có bảng **THỨ TỰ NGƯỜI BẮN** và dòng trên cùng bên phải hiển thị người đang tới lượt.
+- Nút **Nạp danh sách CSV**: chọn CSV UTF-8 với 3 cột `code,name,unit` hoặc `Mã người bắn,Họ tên,Đơn vị`. Thứ tự file là thứ tự lượt; có thể tạo CSV mẫu ở tab Danh sách người bắn.
+- Dòng vàng: đang tới lượt. Dòng xanh: đã có ít nhất một kết quả chấm thực tế lưu thành công. DEMO không đánh dấu hoàn thành.
+- Nhấp một dòng và **Chọn người đang bắn**, hoặc **Người tiếp theo** để đến người chưa chấm phía sau. Không tự đổi lượt sau khi chấm để tránh nhầm người.
+- Danh sách, thứ tự và trạng thái lưu ở `data/shooting_queue.json` (được `.gitignore` bỏ qua).
+- Mỗi hàng là một người; thông tin bệ/loạt vẫn điền ở ô sẵn có trong tab Loạt bắn. Trạng thái đã chấm không tương đương đã duyệt điểm.
