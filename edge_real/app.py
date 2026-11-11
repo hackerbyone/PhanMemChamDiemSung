@@ -34,7 +34,7 @@ class App(Management,tk.Tk):
         self.before_image=None;self.after_image=None;self.result=None;self.busy=False;self.cap=None;self.frame=None
         self.detector=None;self.pairs=None;self.round_id=None;self.meta=None;self.saved=False;self.messages=queue.Queue();self.store=Store(ROOT/'data')
         self.expected_revision=None;self.inspector=None;self.recovery_offered=False;self.before_preview=[];self.zoom_windows={}
-        self.vars={};self.identity_entries=[];self.photos=[];self.before_original=None
+        self.vars={};self.identity_entries=[];self.photos=[];self.before_original=None;self.after_original=None
         style=ttk.Style();style.configure('Title.TLabel',font=('Segoe UI',17,'bold'));style.configure('TButton',padding=6)
         ttk.Label(self,text='Chấm điểm tự động từ hai ảnh',style='Title.TLabel').pack(anchor='w',padx=16,pady=(12,3))
         self.notebook=ttk.Notebook(self);self.notebook.pack(fill='both',expand=True,padx=12,pady=8)
@@ -54,8 +54,9 @@ class App(Management,tk.Tk):
             entry=ttk.Entry(form,textvariable=v,width=19);entry.grid(row=row,column=1,sticky='ew',pady=3);self.identity_entries.append(entry)
         form.columnconfigure(1,weight=1)
         actions=ttk.LabelFrame(controls,text='Điều khiển',padding=8);actions.pack(fill='x')
-        for name,cmd in [('Mở / đóng camera',self.camera),('1. Chụp TRƯỚC',lambda:self.capture('before')),('2. Chụp SAU & tính điểm',lambda:self.capture('after')),('Mở ảnh trước',lambda:self.load('before')),('Xem ảnh gốc (ảnh trước)',self.show_original),('Mở ảnh sau & tính điểm',lambda:self.load('after')),('Tính lại / thử lại',self.run_analysis),('Loạt tiếp theo',self.reset),('Người tiếp theo',lambda:self.reset(new_shooter=True)),('Thử hai ảnh mẫu',self.demo)]:
-            self.button(actions,name,cmd).pack(fill='x',pady=2)
+        for name,cmd in [('Mở / đóng camera',self.camera),('1. Chụp TRƯỚC',lambda:self.capture('before')),('2. Chụp SAU & tính điểm',lambda:self.capture('after')),('Mở ảnh trước',lambda:self.load('before')),('Mở ảnh sau & tính điểm',lambda:self.load('after')),('Xem ảnh gốc',self.choose_original),('Tính lại / thử lại',self.run_analysis),('Loạt tiếp theo',self.reset),('Người tiếp theo',lambda:self.reset(new_shooter=True)),('Thử hai ảnh mẫu',self.demo)]:
+            b=self.button(actions,name,cmd);b.pack(fill='x',pady=2)
+            if name=='Xem ảnh gốc':self.original_button=b
         main=ttk.Frame(main_tab);main.grid(row=0,column=1,sticky='nsew');main.columnconfigure(0,weight=1);main.rowconfigure(1,weight=1)
         ttk.Label(main,text='Đỏ: lỗ cũ • Xanh: lỗ mới • Bấm ảnh để zoom/sửa • Giữ chuột phải trên vòng để kéo, thả để tính lại điểm',wraplength=720).grid(row=0,column=0,sticky='w',pady=(8,6))
         panels=ttk.Frame(main);panels.grid(row=1,column=0,sticky='nsew');panels.rowconfigure(0,weight=1);self.views=[]
@@ -200,7 +201,7 @@ class App(Management,tk.Tk):
                     self.status.set('Đã hủy. Chụp lại ảnh rõ, thấy toàn bộ bia rồi mở lại.');return
                 out=im
             self.set_image(kind,out,source,extra={kind+'_rectification':info})
-            if kind=='before':self.before_original=im
+            setattr(self,kind+'_original',im)
             try:shutil.copyfile(p,self.store.root/'drafts'/self.round_id/(kind+'_original'+Path(p).suffix.lower()))
             except OSError as e:self.status.set('Không lưu được bản sao ảnh gốc: '+str(e))
         self.task(work,done,f'Đang xử lý ảnh {name}: SIFT tìm bia, nắn thẳng và cắt bỏ cảnh vật xung quanh…')
@@ -210,15 +211,35 @@ class App(Management,tk.Tk):
         im=getattr(self,kind+'_image')
         if info and info.get('homography') and im is not None and im.shape[:2]==self.template.shape[:2]:return info
         return None
-    def show_original(self):
-        im=self.before_original;info=(self.meta or self.result or {}).get('before_rectification')
-        if im is None and self.round_id:
-            files=sorted((self.store.root/'drafts'/self.round_id).glob('before_original.*'))
-            if files:im=read_image(files[0])
-        if im is None:raise ValueError('Chưa có ảnh gốc. Ảnh gốc chỉ có khi bấm "Mở ảnh trước" và chọn ảnh từ máy tính.')
-        window=self.zoom_windows.get('original')
+    def original_file(self,kind):
+        """Bản sao ảnh gốc trong thư mục nháp của loạt (để xem lại sau khi khôi phục / mở lịch sử)."""
+        if not self.round_id:return None
+        files=sorted((self.store.root/'drafts'/self.round_id).glob(kind+'_original.*'))
+        return files[0] if files else None
+    def has_original(self,kind):
+        return getattr(self,kind+'_original') is not None or self.original_file(kind) is not None
+    def original_menu(self):
+        """Menu chọn xem ảnh gốc của ảnh trước hay ảnh sau; mục chưa có ảnh bị làm mờ."""
+        menu=tk.Menu(self,tearoff=0)
+        for kind,label in (('before','Ảnh gốc của ảnh TRƯỚC'),('after','Ảnh gốc của ảnh SAU')):
+            ok=self.has_original(kind)
+            menu.add_command(label=label if ok else label+' (chưa có)',state='normal' if ok else 'disabled',
+                             command=lambda k=kind:self.guard(lambda:self.show_original(k)))
+        return menu
+    def choose_original(self):
+        if not (self.has_original('before') or self.has_original('after')):
+            raise ValueError('Chưa có ảnh gốc. Ảnh gốc chỉ có khi bấm "Mở ảnh trước" / "Mở ảnh sau & tính điểm" và chọn ảnh từ máy tính.')
+        menu=self.original_menu();b=self.original_button
+        try:menu.tk_popup(b.winfo_rootx(),b.winfo_rooty()+b.winfo_height())
+        finally:menu.grab_release()
+    def show_original(self,kind='before'):
+        name='trước' if kind=='before' else 'sau'
+        im=getattr(self,kind+'_original');info=(self.meta or {}).get(kind+'_rectification') or (self.result or {}).get(kind+'_rectification')
+        if im is None and self.original_file(kind):im=read_image(self.original_file(kind))
+        if im is None:raise ValueError(f'Chưa có ảnh gốc của ảnh {name}. Ảnh gốc chỉ có khi mở ảnh {name} từ máy tính.')
+        window=self.zoom_windows.get('original_'+kind)
         if window and window.winfo_exists():window.destroy()
-        self.zoom_windows['original']=OriginalView(self,im,info)
+        self.zoom_windows['original_'+kind]=OriginalView(self,im,info,title='Ảnh gốc — ảnh '+name)
     def demo(self):
         if self.before_image is not None:raise ValueError('Bấm Loạt tiếp theo trước khi thử ảnh mẫu')
         for k,v in {'shooter_code':'DEMO','shooter':'Thử ảnh mẫu','unit':'DEMO'}.items():self.vars[k].set(v)
@@ -369,7 +390,7 @@ class App(Management,tk.Tk):
         for window in self.zoom_windows.values():
             if window.winfo_exists():window.destroy()
         self.zoom_windows={}
-        self.before_image=None;self.before_original=None;self.after_image=None;self.result=None;self.pairs=None;self.round_id=None;self.saved=False;self.meta=None
+        self.before_image=None;self.before_original=None;self.after_image=None;self.after_original=None;self.result=None;self.pairs=None;self.round_id=None;self.saved=False;self.meta=None
         self.config=copy.deepcopy(self.default_config)
         for e in self.identity_entries:e.configure(state='normal')
         self.tree.delete(*self.tree.get_children())

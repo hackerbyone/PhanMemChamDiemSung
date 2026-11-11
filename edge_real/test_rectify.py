@@ -106,7 +106,7 @@ class RectifyTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get('RUN_DESKTOP_TESTS') == '1', 'Set RUN_DESKTOP_TESTS=1')
 class OpenBeforeFlow(unittest.TestCase):
-    """Nút "Mở ảnh trước": nắn ảnh, lưu ảnh gốc, nút "Xem ảnh gốc"."""
+    """Nút "Mở ảnh trước/sau": nắn ảnh, lưu ảnh gốc; nút "Xem ảnh gốc" chọn ảnh trước hoặc sau."""
     def setUp(self):
         import app
         self.mod = app
@@ -139,25 +139,41 @@ class OpenBeforeFlow(unittest.TestCase):
         info = self.app.meta['before_rectification']
         self.assertGreaterEqual(info['inliers'], 15)
         self.assertTrue((self.store.root / 'drafts' / self.app.round_id / 'before_original.jpg').exists())
+        self.assertEqual(self.app.original_button.cget('text'), 'Xem ảnh gốc')
+        menu = self.app.original_menu()
+        self.assertEqual(menu.entrycget(0, 'state'), 'normal')
+        self.assertEqual(menu.entrycget(1, 'state'), 'disabled')  # chưa có ảnh sau
         self.app.before_original = None  # buộc đọc lại từ thư mục nháp
-        self.app.show_original()
-        window = self.app.zoom_windows['original']; window.update()
+        menu.invoke(0)
+        window = self.app.zoom_windows['original_before']; window.update()
         self.assertEqual(window.image.shape, photo.shape)
+        with self.assertRaises(ValueError):
+            self.app.show_original('after')
         self.app.clear_round()  # như khi bấm Loạt tiếp theo
         self.assertFalse(window.winfo_exists())
         self.assertIsNone(self.app.before_original)
+        with self.assertRaises(ValueError):
+            self.app.choose_original()
 
     def test_after_photo_is_rectified_too(self):
         template = read_image(ROOT / 'assets/Biaso4.png')
         with patch.object(self.mod.App, 'detect_before', lambda instance: None),              patch.object(self.mod.App, 'run_analysis', lambda instance: None):
             self.open_before(fake_photo(template)[0])
-            path = Path(self.tmp.name) / 'after.jpg'; cv2.imwrite(str(path), fake_photo(template, seed=5)[0])
+            after_photo = fake_photo(template, seed=5)[0]
+            path = Path(self.tmp.name) / 'after.jpg'; cv2.imwrite(str(path), after_photo)
             with patch.object(self.mod.filedialog, 'askopenfilename', return_value=str(path)):
                 self.app.load('after')
         self.assertEqual(self.app.after_image.shape, template.shape)
         self.assertIsNotNone(self.app.rectification('before'))
         self.assertIsNotNone(self.app.rectification('after'))
         self.assertTrue((self.store.root / 'drafts' / self.app.round_id / 'after_original.jpg').exists())
+        menu = self.app.original_menu()
+        self.assertEqual([menu.entrycget(i, 'state') for i in (0, 1)], ['normal', 'normal'])
+        self.app.after_original = None  # buộc đọc lại từ thư mục nháp
+        menu.invoke(1)
+        window = self.app.zoom_windows['original_after']; window.update()
+        self.assertEqual(window.image.shape, after_photo.shape)
+        self.assertIn('sau', window.title())
 
     def test_unusable_photo_can_be_declined(self):
         noise = np.random.default_rng(2).integers(0, 255, (900, 1200, 3), dtype=np.uint8)
@@ -165,7 +181,7 @@ class OpenBeforeFlow(unittest.TestCase):
         self.assertTrue(self.ask.called)
         self.assertIsNone(self.app.before_image)
         with self.assertRaises(ValueError):
-            self.app.show_original()
+            self.app.choose_original()
 
 
 if __name__ == '__main__':
