@@ -143,11 +143,27 @@ class Detector:
                  'confidence':float(b[4]),'class_id':int(b[5])} for b in r.boxes.data.cpu().numpy()]
 
 
-def analyze(before,after,template,config,detector,confidence=.25,radius=12,pairs=None):
-    """Warp both images first, then run YOLO in the common template coordinates."""
+def prealigned_quality(image, template, info=None):
+    """Ảnh đã được nắn sẵn về khung ảnh mẫu (rectify.py): homography là ma trận đơn vị."""
+    if image.shape[:2] != template.shape[:2]:
+        raise ValueError('Ảnh đã nắn phải cùng kích thước ảnh mẫu')
+    info = info or {}
+    return np.eye(3), {'inliers': int(info.get('inliers', 0)), 'matches': int(info.get('matches', 0)),
+                       'rmse_px': float(info.get('rmse_px', 0.)), 'coverage': float(info.get('coverage', 1.)),
+                       'method': 'prealigned:' + str(info.get('method', 'rectify'))}
+
+
+def analyze(before,after,template,config,detector,confidence=.25,radius=12,pairs=None,prealigned=(None,None)):
+    """Warp both images first, then run YOLO in the common template coordinates.
+
+    prealigned: (thông tin nắn ảnh trước, ảnh sau) từ rectify.py; ảnh nào đã nắn thì không căn chỉnh lại
+    (tránh sai số của lần SIFT thứ hai). Căn chỉnh thủ công (pairs) luôn được ưu tiên.
+    """
     validate_config(config)
-    hb,qb=align(before,template,None if pairs is None else pairs[0])
-    ha,qa=align(after,template,None if pairs is None else pairs[1])
+    if pairs is None and prealigned[0]:hb,qb=prealigned_quality(before,template,prealigned[0])
+    else:hb,qb=align(before,template,None if pairs is None else pairs[0])
+    if pairs is None and prealigned[1]:ha,qa=prealigned_quality(after,template,prealigned[1])
+    else:ha,qa=align(after,template,None if pairs is None else pairs[1])
     height,width=template.shape[:2]
     labels=get_map(config) if 'score_map' in config else None
     if labels is not None and labels.shape != (height,width):

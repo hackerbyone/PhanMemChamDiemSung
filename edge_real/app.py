@@ -13,7 +13,7 @@ from tkinter import ttk,filedialog,messagebox
 import cv2
 import numpy as np
 from PIL import Image,ImageTk
-from core import read_image,sha,validate_config,overlay,analyze,Detector,score_point,align,transform
+from core import read_image,sha,validate_config,overlay,analyze,Detector,score_point,align,transform,prealigned_quality
 from annotations import markers,draw_markers,hole_labels,is_old
 from core import rescore_result
 from storage import Store,utc,atomic_json,LOCAL_TZ
@@ -22,6 +22,9 @@ from score_map import attach_map
 from picker import Picker
 from management import Management
 from image_viewer import Inspection,ImagePreview
+import shutil
+from rectify import rectify
+from original_view import OriginalView
 ROOT=Path(__file__).resolve().parents[1]
 
 class App(Management,tk.Tk):
@@ -31,7 +34,7 @@ class App(Management,tk.Tk):
         self.before_image=None;self.after_image=None;self.result=None;self.busy=False;self.cap=None;self.frame=None
         self.detector=None;self.pairs=None;self.round_id=None;self.meta=None;self.saved=False;self.messages=queue.Queue();self.store=Store(ROOT/'data')
         self.expected_revision=None;self.inspector=None;self.recovery_offered=False;self.before_preview=[];self.zoom_windows={}
-        self.vars={};self.identity_entries=[];self.photos=[]
+        self.vars={};self.identity_entries=[];self.photos=[];self.before_original=None
         style=ttk.Style();style.configure('Title.TLabel',font=('Segoe UI',17,'bold'));style.configure('TButton',padding=6)
         ttk.Label(self,text='Chấm điểm tự động từ hai ảnh',style='Title.TLabel').pack(anchor='w',padx=16,pady=(12,3))
         self.notebook=ttk.Notebook(self);self.notebook.pack(fill='both',expand=True,padx=12,pady=8)
@@ -51,7 +54,7 @@ class App(Management,tk.Tk):
             entry=ttk.Entry(form,textvariable=v,width=19);entry.grid(row=row,column=1,sticky='ew',pady=3);self.identity_entries.append(entry)
         form.columnconfigure(1,weight=1)
         actions=ttk.LabelFrame(controls,text='Điều khiển',padding=8);actions.pack(fill='x')
-        for name,cmd in [('Mở / đóng camera',self.camera),('1. Chụp TRƯỚC',lambda:self.capture('before')),('2. Chụp SAU & tính điểm',lambda:self.capture('after')),('Mở ảnh trước',lambda:self.load('before')),('Mở ảnh sau & tính điểm',lambda:self.load('after')),('Tính lại / thử lại',self.run_analysis),('Loạt tiếp theo',self.reset),('Người tiếp theo',lambda:self.reset(new_shooter=True)),('Thử hai ảnh mẫu',self.demo)]:
+        for name,cmd in [('Mở / đóng camera',self.camera),('1. Chụp TRƯỚC',lambda:self.capture('before')),('2. Chụp SAU & tính điểm',lambda:self.capture('after')),('Mở ảnh trước',lambda:self.load('before')),('Xem ảnh gốc (ảnh trước)',self.show_original),('Mở ảnh sau & tính điểm',lambda:self.load('after')),('Tính lại / thử lại',self.run_analysis),('Loạt tiếp theo',self.reset),('Người tiếp theo',lambda:self.reset(new_shooter=True)),('Thử hai ảnh mẫu',self.demo)]:
             self.button(actions,name,cmd).pack(fill='x',pady=2)
         main=ttk.Frame(main_tab);main.grid(row=0,column=1,sticky='nsew');main.columnconfigure(0,weight=1);main.rowconfigure(1,weight=1)
         ttk.Label(main,text='Đỏ: lỗ cũ • Xanh: lỗ mới • Bấm ảnh để zoom/sửa • Giữ chuột phải trên vòng để kéo, thả để tính lại điểm',wraplength=720).grid(row=0,column=0,sticky='w',pady=(8,6))
@@ -142,28 +145,34 @@ class App(Management,tk.Tk):
         if any(len(m[k])>200 for k in ('shooter_code','shooter','unit')):raise ValueError('Mã, họ tên, đơn vị tối đa 200 ký tự')
         m['notes']=self.vars['notes'].get().strip()
         return m
-    def set_image(self,kind,im,source,preview=True):
+    def check_can_set(self,kind):
         if not self.config:raise ValueError('Bản đồ điểm chưa nạp xong')
         if self.saved:raise ValueError('Loạt đã lưu; bấm Loạt tiếp theo hoặc Người tiếp theo để chụp tiếp. Muốn sửa, dùng tab Thiết lập.')
         if kind=='before':
             if self.before_image is not None:raise ValueError('Đã có ảnh trước. Bấm Loạt tiếp theo nếu muốn bắt đầu lại.')
+            return self.read_meta()
+        if self.before_image is None:raise ValueError('Cần ảnh trước loạt')
+    def set_image(self,kind,im,source,preview=True,extra=None):
+        self.check_can_set(kind)
+        if kind=='before':
             self.meta=self.read_meta();self.meta['capture_sources']={'before':source};self.meta['before_acquired_at']=utc();self.round_id=str(uuid.uuid4())
             self.meta['_template_sha256']=sha(self.template_path);self.meta['_draft_config']=copy.deepcopy(self.config)
             self.before_image=im.copy()
             for e in self.identity_entries:e.configure(state='disabled')
         else:
-            if self.before_image is None:raise ValueError('Cần ảnh trước loạt')
             self.meta['after_acquired_at']=utc();self.meta['capture_sources']['after']=source;self.after_image=im.copy()
+        self.meta.pop(kind+'_rectification',None)
+        if extra:self.meta.update(extra)
         self.store.capture(self.round_id,kind,im,self.meta);self.show(self.views[0 if kind=='before' else 1],im);self.pairs=None
         if kind=='after':self.run_analysis()
         else:
             self.summary.set('Đã lưu ảnh trước. Kết thúc loạt thì chụp ảnh sau.');self.status.set('Ảnh trước đã được lưu ngay trên máy.')
             if preview:self.detect_before()
     def detect_before(self):
-        image=self.before_image.copy();conf=float(self.vars['confidence'].get())
+        image=self.before_image.copy();conf=float(self.vars['confidence'].get());rectified=self.rectification('before')
         def work():
             if self.detector is None:self.detector=Detector(ROOT/'assets/best.pt')
-            H,_=align(image,self.template);height,width=self.template.shape[:2]
+            H=prealigned_quality(image,self.template)[0] if rectified else align(image,self.template)[0];height,width=self.template.shape[:2]
             holes=self.detector.detect(cv2.warpPerspective(image,H,(width,height)),conf)
             points=transform([h['point'] for h in holes],np.linalg.inv(H))
             return [dict(point=p,label=f'C{i+1}',old=True,index=i,confidence=h.get('confidence',0)) for i,(h,p) in enumerate(zip(holes,points))]
@@ -176,8 +185,40 @@ class App(Management,tk.Tk):
         if self.frame is None:raise ValueError('Mở camera trước; chưa có khung hình hợp lệ')
         self.set_image(kind,self.frame,'usb_camera')
     def load(self,kind):
+        """Mở ảnh từ máy: nắn thẳng, cắt bỏ cảnh vật (rectify.py) rồi mới dùng; giữ bản sao ảnh gốc."""
+        self.check_can_set(kind)
         p=filedialog.askopenfilename(filetypes=[('Ảnh','*.png *.jpg *.jpeg *.bmp')])
-        if p:self.set_image(kind,read_image(p),'file:'+Path(p).name)
+        if not p:return
+        im=read_image(p);source='file:'+Path(p).name;name='trước' if kind=='before' else 'sau'
+        def work():
+            try:return rectify(im,self.template,self.config)
+            except ValueError as e:return None,{'failed':str(e)}
+        def done(res):
+            out,info=res
+            if out is None:
+                if not messagebox.askyesno('Không nắn được ảnh',info['failed']+f'\n\nVẫn dùng ảnh gốc (chưa xử lý) làm ảnh {name}?'):
+                    self.status.set('Đã hủy. Chụp lại ảnh rõ, thấy toàn bộ bia rồi mở lại.');return
+                out=im
+            self.set_image(kind,out,source,extra={kind+'_rectification':info})
+            if kind=='before':self.before_original=im
+            try:shutil.copyfile(p,self.store.root/'drafts'/self.round_id/(kind+'_original'+Path(p).suffix.lower()))
+            except OSError as e:self.status.set('Không lưu được bản sao ảnh gốc: '+str(e))
+        self.task(work,done,f'Đang xử lý ảnh {name}: SIFT tìm bia, nắn thẳng và cắt bỏ cảnh vật xung quanh…')
+    def rectification(self,kind):
+        """Thông tin nắn ảnh nếu ảnh hiện tại đã được nắn về khung ảnh mẫu, ngược lại None."""
+        info=(self.meta or {}).get(kind+'_rectification') or (self.result or {}).get(kind+'_rectification')
+        im=getattr(self,kind+'_image')
+        if info and info.get('homography') and im is not None and im.shape[:2]==self.template.shape[:2]:return info
+        return None
+    def show_original(self):
+        im=self.before_original;info=(self.meta or self.result or {}).get('before_rectification')
+        if im is None and self.round_id:
+            files=sorted((self.store.root/'drafts'/self.round_id).glob('before_original.*'))
+            if files:im=read_image(files[0])
+        if im is None:raise ValueError('Chưa có ảnh gốc. Ảnh gốc chỉ có khi bấm "Mở ảnh trước" và chọn ảnh từ máy tính.')
+        window=self.zoom_windows.get('original')
+        if window and window.winfo_exists():window.destroy()
+        self.zoom_windows['original']=OriginalView(self,im,info)
     def demo(self):
         if self.before_image is not None:raise ValueError('Bấm Loạt tiếp theo trước khi thử ảnh mẫu')
         for k,v in {'shooter_code':'DEMO','shooter':'Thử ảnh mẫu','unit':'DEMO'}.items():self.vars[k].set(v)
@@ -190,9 +231,10 @@ class App(Management,tk.Tk):
         if self.saved and not messagebox.askyesno('Tính lại loạt','Tính lại sẽ thay các hiệu chỉnh hiện tại bằng kết quả nhận diện mới và lưu phiên bản tiếp theo. Tiếp tục?'):return
         conf=float(self.vars['confidence'].get());radius=float(self.vars['radius'].get())
         if not 0<conf<1 or not 0<radius<=100:raise ValueError('Ngưỡng YOLO phải trong (0,1), khoảng ghép trong (0,100]')
+        prealigned=(self.rectification('before'),self.rectification('after'))
         def work():
             if self.detector is None:self.detector=Detector(ROOT/'assets/best.pt')
-            r=analyze(self.before_image,self.after_image,self.template,self.config,self.detector,conf,radius,self.pairs)
+            r=analyze(self.before_image,self.after_image,self.template,self.config,self.detector,conf,radius,self.pairs,prealigned)
             r['model_sha256']=sha(ROOT/'assets/best.pt');count=sum(x['selected'] for x in r['detections'])
             if self.meta.get('expected_shots') is not None and count!=self.meta['expected_shots']:r['warnings'].append('Số lỗ mới khác số phát dự kiến')
             if self.meta.get('demo'):r['warnings'].append('Ảnh trước là mẫu tham chiếu, không phải ảnh đầu loạt thực tế');r['status']='DEMO'
@@ -327,7 +369,7 @@ class App(Management,tk.Tk):
         for window in self.zoom_windows.values():
             if window.winfo_exists():window.destroy()
         self.zoom_windows={}
-        self.before_image=None;self.after_image=None;self.result=None;self.pairs=None;self.round_id=None;self.saved=False;self.meta=None
+        self.before_image=None;self.before_original=None;self.after_image=None;self.result=None;self.pairs=None;self.round_id=None;self.saved=False;self.meta=None
         self.config=copy.deepcopy(self.default_config)
         for e in self.identity_entries:e.configure(state='normal')
         self.tree.delete(*self.tree.get_children())
