@@ -154,6 +154,7 @@ class Management:
         values=self.roster_table.item(selected[0],'values')
         if not self.reset(new_shooter=True):return
         for key,value in zip(('shooter_code','shooter','unit'),values):self.vars[key].set(value)
+        self.queue_select_by_code(values[0])
         self.notebook.select(0)
         if self.roster_detail and self.roster_detail.winfo_exists():self.roster_detail.destroy()
         self.roster_window.withdraw()
