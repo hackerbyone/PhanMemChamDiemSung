@@ -23,7 +23,6 @@ from picker import Picker
 from management import Management
 from shooter_queue import ShooterQueue
 from image_viewer import Inspection,ImagePreview
-from image_viewer import Inspection,ImagePreview
 import shutil
 from rectify import rectify
 from original_view import OriginalView
@@ -36,8 +35,9 @@ class App(ShooterQueue,Management,tk.Tk):
         self.before_image=None;self.after_image=None;self.result=None;self.busy=False;self.cap=None;self.frame=None
         self.detector=None;self.pairs=None;self.round_id=None;self.meta=None;self.saved=False;self.messages=queue.Queue();self.store=Store(ROOT/'data')
         self.expected_revision=None;self.inspector=None;self.recovery_offered=False;self.before_preview=[];self.zoom_windows={}
-        self.vars={};self.identity_entries=[];self.photos=[];self.before_original=None;self.after_original=None
+        self.vars={};self.identity_entries=[];self.photos=[];self.before_original=None;self.after_original=None;self.original_buttons={}
         style=ttk.Style();style.configure('Title.TLabel',font=('Segoe UI',17,'bold'));style.configure('TButton',padding=6)
+        style.configure('PanelTitle.TLabel',font=('Segoe UI',9,'bold'));style.configure('Compact.TButton',padding=(8,2))
         top_bar=ttk.Frame(self);top_bar.pack(fill='x',padx=16,pady=(12,3))
         ttk.Label(top_bar,text='Chấm điểm tự động từ hai ảnh',style='Title.TLabel').pack(side='left')
         self.queue_header=tk.StringVar(value='CHƯA CHỌN NGƯỜI BẮN')
@@ -45,71 +45,51 @@ class App(ShooterQueue,Management,tk.Tk):
         self.notebook=ttk.Notebook(self);self.notebook.pack(fill='both',expand=True,padx=12,pady=8)
         main_tab=ttk.Frame(self.notebook);advanced=ttk.Frame(self.notebook);self.notebook.add(main_tab,text='Loạt bắn');self.notebook.add(advanced,text='Thiết lập & kiểm tra')
         main_tab.columnconfigure(1,weight=1);main_tab.rowconfigure(0,weight=1)
-        sidebar=ttk.Frame(main_tab,width=285);sidebar.grid(row=0,column=0,sticky='ns',padx=(0,10));sidebar.grid_propagate(False)
+        sidebar=ttk.Frame(main_tab,width=325);sidebar.grid(row=0,column=0,sticky='ns',padx=(0,10));sidebar.grid_propagate(False)
         sidebar.rowconfigure(0,weight=1);sidebar.columnconfigure(0,weight=1)
-        scroll=tk.Canvas(sidebar,highlightthickness=0,width=265);sb=ttk.Scrollbar(sidebar,orient='vertical',command=scroll.yview)
+        scroll=tk.Canvas(sidebar,highlightthickness=0,width=308);sb=ttk.Scrollbar(sidebar,orient='vertical',command=scroll.yview)
         scroll.configure(yscrollcommand=sb.set);scroll.grid(row=0,column=0,sticky='nsew');sb.grid(row=0,column=1,sticky='ns')
         controls=ttk.Frame(scroll);content=scroll.create_window((0,0),window=controls,anchor='nw')
         controls.bind('<Configure>',lambda e:scroll.configure(scrollregion=scroll.bbox('all')))
         scroll.bind('<Configure>',lambda e:scroll.itemconfigure(content,width=e.width))
-        self.bind('<MouseWheel>',lambda e:scroll.yview_scroll(-int(e.delta/120),'units') if self.notebook.index('current')==0 else None)
-        form=ttk.LabelFrame(controls,text='Người bắn & loạt bắn',padding=8);form.pack(fill='x',pady=(4,8))
+        def _scroll_sidebar(e):
+            if self.notebook.index('current')!=0 or e.widget==getattr(self,'queue_table',None):return
+            x,y=self.winfo_pointerxy()
+            if sidebar.winfo_rootx()<=x<=sidebar.winfo_rootx()+sidebar.winfo_width() and sidebar.winfo_rooty()<=y<=sidebar.winfo_rooty()+sidebar.winfo_height():
+                scroll.yview_scroll(-int(e.delta/120),'units')
+        self.bind('<MouseWheel>',_scroll_sidebar)
+        form=ttk.LabelFrame(controls,text='Người bắn & loạt bắn',padding=6);form.pack(fill='x',pady=(4,6))
+        queue_holder=ttk.Frame(form);queue_holder.grid(row=0,column=0,columnspan=2,sticky='ew',pady=(0,4))
         for row,(key,label,default) in enumerate([('shooter_code','Mã',''),('shooter','Họ tên',''),('unit','Đơn vị',''),('lane','Bệ bắn','1'),('series','Loạt','1'),('expected','Số phát',''),('shooting_date','Ngày bắn',datetime.now(LOCAL_TZ).date().isoformat()),('notes','Ghi chú','')],1):
-            ttk.Label(form,text=label).grid(row=row,column=0,sticky='w',pady=3,padx=(0,6));v=tk.StringVar(value=default);self.vars[key]=v
-            entry=ttk.Entry(form,textvariable=v,width=19);entry.grid(row=row,column=1,sticky='ew',pady=3);self.identity_entries.append(entry)
+            ttk.Label(form,text=label).grid(row=row,column=0,sticky='w',pady=2,padx=(0,6));v=tk.StringVar(value=default);self.vars[key]=v
+            entry=ttk.Entry(form,textvariable=v,width=19);entry.grid(row=row,column=1,sticky='ew',pady=2);self.identity_entries.append(entry)
         form.columnconfigure(1,weight=1)
-        actions=ttk.LabelFrame(controls,text='Điều khiển',padding=8);actions.pack(fill='x')
-        for name,cmd in [('Mở / đóng camera',self.camera),('1. Chụp TRƯỚC',lambda:self.capture('before')),('2. Chụp SAU & tính điểm',lambda:self.capture('after')),('Mở ảnh trước',lambda:self.load('before')),('Mở ảnh sau & tính điểm',lambda:self.load('after')),('Tính lại / thử lại',self.run_analysis),('Loạt tiếp theo',self.reset),('Người tiếp theo',self.queue_next_or_reset),('Thử hai ảnh mẫu',self.demo)]:
-            self.button(actions,name,cmd).pack(fill='x',pady=2)
-        main=ttk.Frame(main_tab);main.grid(row=0,column=1,sticky='nsew');main.columnconfigure(0,weight=1);main.rowconfigure(2,weight=1)
-        queue_holder=ttk.Frame(main);queue_holder.grid(row=0,column=0,sticky='ew')
         self.build_queue_panel(queue_holder)
-        ttk.Label(main,text='Đỏ: lỗ cũ • Xanh: lỗ mới • Bấm ảnh để zoom/sửa • Giữ chuột phải trên vòng để kéo, thả để tính lại điểm',wraplength=720).grid(row=1,column=0,sticky='w',pady=(4,4))
-        panels=ttk.Frame(main);panels.grid(row=2,column=0,sticky='nsew');panels.rowconfigure(0,weight=1);self.views=[]
-        for i,label in enumerate(['Ảnh TRƯỚC / camera','Ảnh SAU — cũ & mới']):
-            panels.columnconfigure(i,weight=1,uniform='images');p=ttk.LabelFrame(panels,text=label,padding=3,width=300,height=350);p.grid(row=0,column=i,sticky='nsew',padx=3);p.pack_propagate(False)
-            v=ttk.Label(p,text='Chưa có ảnh',anchor='center',cursor='hand2');v.pack(fill='both',expand=True);self.views.append(v)
-            v.bind('<Button-1>',lambda e,k=('before' if i==0 else 'after'):self.guard(lambda:self.open_image(k)))
-            v.bind('<Configure>',lambda e,w=v:self.resize_preview(w))
-        self.summary=tk.StringVar(value='Đang nạp bản đồ điểm…');ttk.Label(main,textvariable=self.summary,font=('Segoe UI',11,'bold'),wraplength=760).grid(row=3,column=0,sticky='w',padx=5,pady=6)
-        rows=ttk.Frame(main);rows.grid(row=4,column=0,sticky='ew');rows.columnconfigure(0,weight=1)
-        self.tree=ttk.Treeview(rows,columns=('number','take','score','conf','status'),show='headings',height=6)
-        for key,label,width in [('number','Số lỗ',65),('take','Tính điểm',75),('score','Điểm',55),('conf','Tin cậy',75),('status','Đối chiếu / lưu ý',330)]:
-            self.tree.heading(key,text=label);self.tree.column(key,width=width,minwidth=50,stretch=key=='status')
-        self.tree.grid(row=0,column=0,sticky='nsew');ys=ttk.Scrollbar(rows,command=self.tree.yview);ys.grid(row=0,column=1,sticky='ns');self.tree.configure(yscrollcommand=ys.set)
-        self.tree.bind('<Escape>',lambda e:self.tree.selection_remove(*self.tree.selection()))
-        self.tree.bind('<<TreeviewSelect>>',lambda e:self.selection_changed())
-        form=ttk.LabelFrame(controls,text='Người bắn & loạt bắn',padding=8);form.pack(fill='x',pady=(4,8))
-        self.button(form,'Tìm / chọn người bắn',self.open_roster).grid(row=0,column=0,columnspan=2,sticky='ew',pady=(0,8))
-        for row,(key,label,default) in enumerate([('shooter_code','Mã',''),('shooter','Họ tên',''),('unit','Đơn vị',''),('lane','Bệ bắn','1'),('series','Loạt','1'),('expected','Số phát',''),('shooting_date','Ngày bắn',datetime.now(LOCAL_TZ).date().isoformat()),('notes','Ghi chú','')],1):
-            ttk.Label(form,text=label).grid(row=row,column=0,sticky='w',pady=3,padx=(0,6));v=tk.StringVar(value=default);self.vars[key]=v
-            entry=ttk.Entry(form,textvariable=v,width=19);entry.grid(row=row,column=1,sticky='ew',pady=3);self.identity_entries.append(entry)
-        form.columnconfigure(1,weight=1)
-        actions=ttk.LabelFrame(controls,text='Điều khiển',padding=8);actions.pack(fill='x')
-        for name,cmd in [('Mở / đóng camera',self.camera),('1. Chụp TRƯỚC',lambda:self.capture('before')),('2. Chụp SAU & tính điểm',lambda:self.capture('after')),('Mở ảnh trước',lambda:self.load('before')),('Mở ảnh sau & tính điểm',lambda:self.load('after')),('Xem ảnh gốc',self.choose_original),('Tính lại / thử lại',self.run_analysis),('Loạt tiếp theo',self.reset),('Người tiếp theo',self.queue_next_or_reset),('Thử hai ảnh mẫu',self.demo)]:
-            b=self.button(actions,name,cmd);b.pack(fill='x',pady=2)
-            if name=='Xem ảnh gốc':self.original_button=b
+        actions=ttk.LabelFrame(controls,text='Điều khiển',padding=6);actions.pack(fill='x')
+        for name,cmd in [('Mở / đóng camera',self.camera),('1. Chụp TRƯỚC',lambda:self.capture('before')),('2. Chụp SAU & tính điểm',lambda:self.capture('after')),('Mở ảnh trước',lambda:self.load('before')),('Mở ảnh sau & tính điểm',lambda:self.load('after')),('Tính lại / thử lại',self.run_analysis),('Loạt tiếp theo',self.reset),('Người tiếp theo',self.queue_next_or_reset),('Thử hai ảnh mẫu',self.demo)]:
+            self.button(actions,name,cmd).pack(fill='x',pady=1)
         main=ttk.Frame(main_tab);main.grid(row=0,column=1,sticky='nsew');main.columnconfigure(0,weight=1);main.rowconfigure(1,weight=1)
-        ttk.Label(main,text='Đỏ: lỗ cũ • Xanh: lỗ mới • Bấm ảnh để zoom/sửa • Giữ chuột phải trên vòng để kéo, thả để tính lại điểm',wraplength=720).grid(row=0,column=0,sticky='w',pady=(8,6))
+        hint_lbl=ttk.Label(main,text='Đỏ: lỗ cũ • Xanh: lỗ mới • Bấm ảnh để phóng to (chỉ xem; chỉnh sửa kết quả tại giao diện web)',wraplength=760)
+        hint_lbl.grid(row=0,column=0,sticky='ew',pady=(4,4))
+        hint_lbl.bind('<Configure>',lambda e,w=hint_lbl:w.configure(wraplength=max(320,e.width-8)))
         panels=ttk.Frame(main);panels.grid(row=1,column=0,sticky='nsew');panels.rowconfigure(0,weight=1);self.views=[]
-        for i,label in enumerate(['Ảnh TRƯỚC / camera','Ảnh SAU — cũ & mới']):
-            panels.columnconfigure(i,weight=1,uniform='images');p=ttk.LabelFrame(panels,text=label,padding=3,width=300,height=350);p.grid(row=0,column=i,sticky='nsew',padx=3);p.pack_propagate(False)
+        for i,(kind,label) in enumerate((('before','Ảnh TRƯỚC / camera'),('after','Ảnh SAU — cũ & mới'))):
+            panels.columnconfigure(i,weight=1,uniform='images')
+            p=ttk.Frame(panels,relief='groove',borderwidth=1,padding=4,width=300,height=350);p.grid(row=0,column=i,sticky='nsew',padx=3);p.pack_propagate(False)
+            hdr=ttk.Frame(p);hdr.pack(fill='x',pady=(0,3))
+            ttk.Label(hdr,text=label,style='PanelTitle.TLabel').pack(side='left',padx=(2,4))
+            btn=ttk.Button(hdr,text='Xem ảnh gốc',style='Compact.TButton',state='disabled',command=lambda k=kind:self.guard(lambda:self.show_original(k)))
+            btn.pack(side='right');self.original_buttons[kind]=btn
             v=ttk.Label(p,text='Chưa có ảnh',anchor='center',cursor='hand2');v.pack(fill='both',expand=True);self.views.append(v)
-            v.bind('<Button-1>',lambda e,k=('before' if i==0 else 'after'):self.guard(lambda:self.open_image(k)))
+            v.bind('<Button-1>',lambda e,k=kind:self.guard(lambda:self.open_image(k)))
             v.bind('<Configure>',lambda e,w=v:self.resize_preview(w))
-        self.summary=tk.StringVar(value='Đang nạp bản đồ điểm…');ttk.Label(main,textvariable=self.summary,font=('Segoe UI',11,'bold'),wraplength=760).grid(row=2,column=0,sticky='w',padx=5,pady=8)
-        rows=ttk.Frame(main);rows.grid(row=3,column=0,sticky='ew');rows.columnconfigure(0,weight=1)
-        self.tree=ttk.Treeview(rows,columns=('number','take','score','conf','status'),show='headings',height=7)
-        for key,label,width in [('number','Số lỗ',65),('take','Tính điểm',75),('score','Điểm',55),('conf','Tin cậy',75),('status','Đối chiếu / lưu ý',330)]:
-            self.tree.heading(key,text=label);self.tree.column(key,width=width,minwidth=50,stretch=key=='status')
-        self.tree.grid(row=0,column=0,sticky='nsew');ys=ttk.Scrollbar(rows,command=self.tree.yview);ys.grid(row=0,column=1,sticky='ns');self.tree.configure(yscrollcommand=ys.set)
-        self.tree.bind('<Escape>',lambda e:self.tree.selection_remove(*self.tree.selection()))
-        self.tree.bind('<<TreeviewSelect>>',lambda e:self.selection_changed())
-        self.tree.bind('<Double-1>',lambda e:self.guard(self.open_inspection))
-        bottom=ttk.Frame(main);bottom.grid(row=5,column=0,sticky='ew',pady=6)
-        queue_box=ttk.Frame(main);queue_box.grid(row=4,column=0,sticky='ew');self.build_queue_panel(queue_box)
-        bottom=ttk.Frame(main);bottom.grid(row=5,column=0,sticky='ew',pady=6)
-        self.button(bottom,'Mở kết quả trên Server',lambda:webbrowser.open(self.url.get().rstrip('/')+'/real')).pack(side='right')
+        bottom=ttk.Frame(main);bottom.grid(row=2,column=0,sticky='ew',pady=(6,2));bottom.columnconfigure(0,weight=1)
+        self.summary=tk.StringVar(value='Đang nạp bản đồ điểm…')
+        summary_lbl=ttk.Label(bottom,textvariable=self.summary,font=('Segoe UI',11,'bold'),wraplength=650)
+        summary_lbl.grid(row=0,column=0,sticky='ew',padx=(4,8))
+        summary_lbl.bind('<Configure>',lambda e,w=summary_lbl:w.configure(wraplength=max(240,e.width-12)))
+        self.button(bottom,'Mở kết quả trên Server',lambda:webbrowser.open(self.url.get().rstrip('/')+'/real')).grid(row=0,column=1,sticky='e')
+        self.build_inspection_table(main)
         self.url=tk.StringVar(value='http://127.0.0.1:8000');self.password=tk.StringVar();self.auto_sync=tk.BooleanVar(value=True)
         self.vars['camera']=tk.StringVar(value='0');self.vars['confidence']=tk.StringVar(value='.25');self.vars['radius']=tk.StringVar(value='12')
         settings=ttk.LabelFrame(advanced,text='Thiết lập một lần');settings.pack(fill='x',padx=8,pady=8)
@@ -118,13 +98,24 @@ class App(ShooterQueue,Management,tk.Tk):
         ttk.Checkbutton(settings,text='Tự gửi kết quả sau khi lưu (cần mật khẩu; mất mạng sẽ giữ hàng đợi)',variable=self.auto_sync).grid(row=5,columnspan=2,sticky='w',padx=8,pady=5)
         self.button(settings,'Gửi lại các loạt đang chờ',self.sync).grid(row=6,column=1,sticky='w',pady=6)
         tools=ttk.LabelFrame(advanced,text='Chỉ dùng khi cần kiểm tra hoặc sửa');tools.pack(fill='x',padx=8,pady=8)
-        for row,(name,cmd) in enumerate([('Nạp lại bản đồ điểm',self.rebuild_template),('Căn chỉnh thủ công khi tự động thất bại',self.manual),('Xem hai ảnh chồng với mẫu',self.inspect),('Xác nhận đã kiểm tra kết quả',self.review)]):self.button(tools,name,cmd).grid(row=row,column=0,sticky='w',padx=8,pady=3)
-        ttk.Label(tools,text='Bấm ảnh sau để sửa / xóa lỗ hoặc kéo vẽ vòng tròn thêm lỗ.\nĐiểm tự cập nhật sau mỗi thao tác.\nLỗ trúng chồng hoàn toàn không thể đếm chắc chắn từ hai ảnh.',wraplength=460).grid(row=0,column=1,rowspan=5,padx=15)
+        for row,(name,cmd) in enumerate([('Nạp lại bản đồ điểm',self.rebuild_template),('Căn chỉnh thủ công khi tự động thất bại',self.manual),('Xem hai ảnh chồng với mẫu',self.inspect),('Xác nhận đã kiểm tra kết quả',self.review),('Mở giao diện kiểm tra trên Web',lambda:webbrowser.open(self.url.get().rstrip('/')+'/real'))]):self.button(tools,name,cmd).grid(row=row,column=0,sticky='w',padx=8,pady=3)
+        ttk.Label(tools,text='Chỉnh sửa, di chuyển, đổi màu hoặc xóa lỗ và bảng kiểm tra từng lỗ thực hiện tại giao diện web (/real).\nLỗ trúng chồng hoàn toàn không thể đếm chắc chắn từ hai ảnh.',wraplength=460).grid(row=0,column=1,rowspan=5,padx=15)
         self.status=tk.StringVar(value='Đang nạp bản đồ điểm…');ttk.Label(self,textvariable=self.status,wraplength=1100).pack(fill='x',padx=16,pady=(0,10))
         self.build_management()
         self.queue_restore()
         self.after(100,self.poll);self.protocol('WM_DELETE_WINDOW',self.close)
         self.task(lambda:load_or_extract(ROOT/'assets/Biaso4.png',self.config_path),self.geometry_done,'Đang nạp bản đồ điểm…')
+    def build_inspection_table(self,parent):
+        """Bảng kiểm tra từng lỗ (tạm ẩn khỏi tab Loạt bắn để ưu tiên vùng xem hai ảnh bia)."""
+        rows=ttk.Frame(parent);rows.columnconfigure(0,weight=1)
+        self.inspection_panel=rows
+        self.tree=ttk.Treeview(rows,columns=('number','take','score','conf','status'),show='headings',height=7)
+        for key,label,width in [('number','Số lỗ',65),('take','Tính điểm',75),('score','Điểm',55),('conf','Tin cậy',75),('status','Đối chiếu / lưu ý',330)]:
+            self.tree.heading(key,text=label);self.tree.column(key,width=width,minwidth=50,stretch=key=='status')
+        self.tree.grid(row=0,column=0,sticky='nsew');ys=ttk.Scrollbar(rows,command=self.tree.yview);ys.grid(row=0,column=1,sticky='ns');self.tree.configure(yscrollcommand=ys.set)
+        self.tree.bind('<Escape>',lambda e:self.tree.selection_remove(*self.tree.selection()))
+        self.tree.bind('<<TreeviewSelect>>',lambda e:self.selection_changed())
+        self.tree.bind('<Double-1>',lambda e:self.guard(self.open_inspection))
     def button(self,parent,label,func):return ttk.Button(parent,text=label,command=lambda:self.guard(func))
     def guard(self,func):
         if self.busy:return
@@ -239,6 +230,7 @@ class App(ShooterQueue,Management,tk.Tk):
             setattr(self,kind+'_original',im)
             try:shutil.copyfile(p,self.store.root/'drafts'/self.round_id/(kind+'_original'+Path(p).suffix.lower()))
             except OSError as e:self.status.set('Không lưu được bản sao ảnh gốc: '+str(e))
+            self.refresh_original_buttons()
         self.task(work,done,f'Đang xử lý ảnh {name}: SIFT tìm bia, nắn thẳng và cắt bỏ cảnh vật xung quanh…')
     def rectification(self,kind):
         """Thông tin nắn ảnh nếu ảnh hiện tại đã được nắn về khung ảnh mẫu, ngược lại None."""
@@ -253,20 +245,9 @@ class App(ShooterQueue,Management,tk.Tk):
         return files[0] if files else None
     def has_original(self,kind):
         return getattr(self,kind+'_original') is not None or self.original_file(kind) is not None
-    def original_menu(self):
-        """Menu chọn xem ảnh gốc của ảnh trước hay ảnh sau; mục chưa có ảnh bị làm mờ."""
-        menu=tk.Menu(self,tearoff=0)
-        for kind,label in (('before','Ảnh gốc của ảnh TRƯỚC'),('after','Ảnh gốc của ảnh SAU')):
-            ok=self.has_original(kind)
-            menu.add_command(label=label if ok else label+' (chưa có)',state='normal' if ok else 'disabled',
-                             command=lambda k=kind:self.guard(lambda:self.show_original(k)))
-        return menu
-    def choose_original(self):
-        if not (self.has_original('before') or self.has_original('after')):
-            raise ValueError('Chưa có ảnh gốc. Ảnh gốc chỉ có khi bấm "Mở ảnh trước" / "Mở ảnh sau & tính điểm" và chọn ảnh từ máy tính.')
-        menu=self.original_menu();b=self.original_button
-        try:menu.tk_popup(b.winfo_rootx(),b.winfo_rooty()+b.winfo_height())
-        finally:menu.grab_release()
+    def refresh_original_buttons(self):
+        for kind,btn in getattr(self,'original_buttons',{}).items():
+            btn.configure(state='normal' if self.has_original(kind) else 'disabled')
     def show_original(self,kind='before'):
         name='trước' if kind=='before' else 'sau'
         im=getattr(self,kind+'_original');info=(self.meta or {}).get(kind+'_rectification') or (self.result or {}).get(kind+'_rectification')
@@ -298,7 +279,6 @@ class App(ShooterQueue,Management,tk.Tk):
             return r
         self.task(work,self.analysis_done,'Đang căn chỉnh hai ảnh, nhận diện YOLO và tính điểm trên mẫu…')
     def analysis_done(self,result):
-        self.meta.pop('reviewed_at',None);self.result=result;self.persist();self.refresh();self.queue_on_scored()
         self.meta.pop('reviewed_at',None);self.result=result;self.persist();self.refresh();self.queue_on_scored()
     def persist(self):
         rescore_result(self.result)
@@ -347,11 +327,11 @@ class App(ShooterQueue,Management,tk.Tk):
     def selection_changed(self):
         self.refresh_images()
         if self.inspector and self.inspector.winfo_exists():self.inspector.render()
-    def open_image(self,kind):
+    def open_image(self,kind,editable=False):
         if getattr(self,kind+'_image') is None:raise ValueError('Chưa có ảnh '+('trước' if kind=='before' else 'sau'))
         window=self.zoom_windows.get(kind)
         if window and window.winfo_exists():window.lift();return
-        self.zoom_windows[kind]=ImagePreview(self,kind)
+        self.zoom_windows[kind]=ImagePreview(self,kind,editable=editable)
     def manual(self):
         if self.before_image is None or self.after_image is None:raise ValueError('Cần đủ hai ảnh')
         pairs=[]
@@ -431,6 +411,7 @@ class App(ShooterQueue,Management,tk.Tk):
         for e in self.identity_entries:e.configure(state='normal')
         self.tree.delete(*self.tree.get_children())
         for v in self.views:v.source_image=None;v.configure(image='',text='Chưa có ảnh')
+        self.refresh_original_buttons()
     def reset(self,new_shooter=False):
         if not self.may_replace_round():return False
         try:series=int(self.vars['series'].get())+1

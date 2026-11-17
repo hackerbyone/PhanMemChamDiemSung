@@ -1,9 +1,1185 @@
-<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kết quả ảnh thật</title>
-<style>body{font:16px system-ui;background:#f3f5f7;color:#17212b;margin:24px}main{max-width:1300px;margin:auto}h1{font-size:26px}button,select{padding:10px;margin:5px;border:1px solid #b8c4ca;border-radius:6px;background:white}section{background:white;padding:20px;border-radius:12px;margin:16px 0}.images{display:flex;gap:15px;flex-wrap:wrap}figure{flex:1;min-width:240px;margin:0}img{width:100%}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px;border-bottom:1px solid #ddd}.muted{color:#596775}#error{color:#b42318}</style>
-<main><h1>Kết quả từ ảnh camera</h1><p class="muted">Kết quả tự động và kết quả đã kiểm tra được ghi nhãn riêng. Số lỗ quan sát được có thể khác số phát bắn khi trúng chồng.</p><button id="reload">Làm mới</button><select id="rounds"><option>Chưa có loạt</option></select><p id="error"></p><section id="summary">Chọn một loạt để xem.</section><section class="images"><figure><figcaption>Ảnh trước nguyên gốc</figcaption><img id="before"></figure><figure><figcaption>Ảnh sau nguyên gốc</figcaption><img id="after"></figure><figure><figcaption>Điểm trên ảnh mẫu</figcaption><img id="annotated"></figure></section><section><h2>Lỗ được tính trong loạt</h2><p id="warnings"></p><p class="muted">STT dưới đây là số thứ tự bản ghi, không phải thứ tự phát bắn. Tọa độ tính bằng pixel ảnh mẫu.</p><table><thead><tr><th>STT</th><th>Tâm x, y</th><th>Điểm</th><th>Nguồn</th></tr></thead><tbody id="holes"></tbody></table></section></main>
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Thiết lập & Kiểm tra kết quả bắn</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:"Segoe UI",system-ui,-apple-system,sans-serif;background:#f3f5f7;color:#17212b}
+header{background:#17212b;color:#fff;padding:12px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+header h1{margin:0;font-size:20px}
+header .sub{font-size:12px;color:#cbd5e1;margin-top:2px}
+.auth-bar{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.auth-bar input{padding:6px 10px;border-radius:7px;border:1px solid #475569;background:#0f1720;color:#fff;font-size:13px;width:155px}
+.auth-badge{background:#166534;color:#fff;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700}
+.nav-link{color:#93c5fd;text-decoration:none;font-size:13px;font-weight:600;padding:6px 10px;border:1px solid #334155;border-radius:7px}
+.nav-link:hover{background:#243242}
+main{max-width:1460px;margin:14px auto;padding:0 16px 28px}
+.panel{background:#fff;border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 2px 8px #0001}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.panel-head h2{margin:0;font-size:16px;color:#1e293b}
+button,select,input{font:inherit}
+.btn{padding:6px 12px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#1e293b;cursor:pointer;font-size:13px;font-weight:600}
+.btn:hover:not(:disabled){background:#f1f5f9}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-primary{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+.btn-primary:hover:not(:disabled){background:#1e40af}
+.btn-success{background:#166534;border-color:#166534;color:#fff}
+.btn-success:hover:not(:disabled){background:#14532d}
+.btn-danger{background:#fff;border-color:#fca5a5;color:#b91c1c}
+.btn-danger:hover:not(:disabled){background:#fef2f2}
+.btn-sm{padding:3px 8px;font-size:12px;border-radius:6px}
+.btn.active-mode{background:#eff6ff;border-color:#2563eb;color:#1d4ed8}
+
+.filters{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:10px}
+.field{display:flex;flex-direction:column;gap:3px}
+.field label{font-size:12px;font-weight:600;color:#475569}
+.field input,.field select{padding:6px 9px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px;background:#fff}
+
+.table-wrap{overflow:auto;max-height:240px;border:1px solid #e2e8f0;border-radius:8px}
+.hole-table-wrap{overflow:auto;max-height:360px;border:1px solid #e2e8f0;border-radius:8px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid #e2e8f0;white-space:nowrap}
+thead th{position:sticky;top:0;background:#f8fafc;color:#334155;font-weight:700;z-index:1;border-bottom:2px solid #cbd5e1}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:#f8fafc}
+tbody tr.selected-row{background:#eff6ff;outline:2px solid #93c5fd;outline-offset:-2px}
+td.wrap{white-space:normal;min-width:190px}
+
+.badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700}
+.badge.AUTO{background:#dbeafe;color:#1e40af}
+.badge.NEEDS_REVIEW{background:#fef3c7;color:#92400e}
+.badge.REVIEWED{background:#dcfce7;color:#166534}
+.badge.DEMO{background:#e2e8f0;color:#334155}
+
+.summary-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.summary-main{font-size:15px;font-weight:700;color:#0f172a}
+.summary-meta{font-size:12px;color:#475569;margin-top:4px}
+.warn-text{color:#b45309;font-size:13px;margin-top:6px;font-weight:600}
+.muted{color:#64748b;font-size:12px}
+.error-banner{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:13px;font-weight:600}
+.error-banner[hidden]{display:none}
+.info-banner{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;padding:7px 10px;border-radius:8px;margin-bottom:8px;font-size:12px;font-weight:600}
+.info-banner[hidden]{display:none}
+
+.images-grid{display:grid;grid-template-columns:repeat(2,minmax(320px,1fr));gap:14px;margin-top:12px}
+@media(max-width:920px){.images-grid{grid-template-columns:1fr}}
+.img-card{border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;padding:10px;display:flex;flex-direction:column;gap:7px}
+.img-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.img-card-title{font-weight:700;font-size:14px;color:#0f172a}
+.zoom-tools{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.canvas-box{position:relative;width:100%;height:500px;background:#1e293b;border-radius:8px;overflow:hidden;border:1px solid #94a3b8}
+.canvas-box canvas{display:block;width:100%;height:100%;cursor:grab}
+.canvas-box canvas.edit-cursor{cursor:crosshair}
+.canvas-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#cbd5e1;font-size:14px;pointer-events:none}
+
+.modal-overlay{position:fixed;inset:0;background:rgba(15,23,32,.62);display:flex;align-items:center;justify-content:center;padding:18px;z-index:1000}
+.modal-overlay[hidden]{display:none}
+.modal-box{background:#fff;border-radius:12px;padding:18px;max-width:1080px;width:100%;max-height:92vh;display:flex;flex-direction:column;gap:10px;box-shadow:0 14px 44px #0006}
+.modal-sm{max-width:430px}
+.orig-canvas-box{width:100%;height:66vh;min-height:360px;background:#1e293b;border-radius:8px;overflow:hidden;position:relative}
+.orig-canvas-box canvas{display:block;width:100%;height:100%;cursor:grab}
+.hole-actions-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.dot-red{color:#dc2626;font-weight:700}
+.dot-green{color:#16a34a;font-weight:700}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Thiết lập &amp; Kiểm tra kết quả bắn</h1>
+    <div class="sub">Chỉnh sửa, di chuyển, đổi màu Đỏ/Xanh, thêm/xóa lỗ và xác nhận kiểm tra trên Web</div>
+  </div>
+  <a class="nav-link" href="/">← Trang trực tiếp</a>
+  <div class="auth-bar" id="authBar"></div>
+</header>
+
+<main>
+  <div id="errorBanner" class="error-banner" hidden></div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Danh sách loạt bắn (lọc theo người bắn, điểm &amp; thời gian)</h2>
+      <span id="roundCount" class="muted"></span>
+    </div>
+    <div class="filters">
+      <div class="field" style="flex:1;min-width:190px">
+        <label for="fQuery">Tìm mã / họ tên / đơn vị / ghi chú</label>
+        <input id="fQuery" type="text" placeholder="Nhập tên, mã (NB0001) hoặc đơn vị…">
+      </div>
+      <div class="field" style="width:165px">
+        <label for="fScore">Tìm điểm</label>
+        <input id="fScore" type="text" placeholder="Vd: 58 hoặc 40-60">
+      </div>
+      <div class="field" style="width:185px">
+        <label for="fStatus">Trạng thái</label>
+        <select id="fStatus">
+          <option value="">Tất cả trạng thái</option>
+          <option value="NEEDS_REVIEW">Cần kiểm tra</option>
+          <option value="AUTO">Tự động — chưa duyệt</option>
+          <option value="REVIEWED">Đã kiểm tra</option>
+          <option value="DEMO">Thử nghiệm ảnh mẫu</option>
+        </select>
+      </div>
+      <div class="field" style="width:145px">
+        <label for="fDate">Ngày bắn</label>
+        <input id="fDate" type="date">
+      </div>
+      <div class="field" style="width:82px">
+        <label for="fLane">Bệ</label>
+        <input id="fLane" type="number" min="1" placeholder="Tất cả">
+      </div>
+      <button class="btn" id="btnClearFilters" type="button">Xóa lọc</button>
+      <button class="btn btn-primary" id="btnReload" type="button">Làm mới</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Thời gian chụp / lưu</th>
+            <th>Ngày bắn</th>
+            <th>Mã</th>
+            <th>Họ tên</th>
+            <th>Đơn vị</th>
+            <th>Bệ / Loạt</th>
+            <th>Số lỗ</th>
+            <th>Điểm</th>
+            <th>Trạng thái</th>
+            <th>Phiên bản</th>
+          </tr>
+        </thead>
+        <tbody id="roundsBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel" id="detailPanel">
+    <div class="summary-bar">
+      <div>
+        <div id="summaryMain" class="summary-main">Chọn một loạt bắn trong bảng phía trên để kiểm tra.</div>
+        <div id="summaryMeta" class="summary-meta"></div>
+        <div id="warningsBar" class="warn-text"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-success" id="btnReview" type="button" disabled>✓ Xác nhận đã kiểm tra</button>
+      </div>
+    </div>
+
+    <div class="images-grid">
+      <div class="img-card">
+        <div class="img-card-head">
+          <span class="img-card-title">Ảnh TRƯỚC / camera</span>
+          <div class="zoom-tools">
+            <button class="btn btn-sm" type="button" onclick="zoomStep('before', 1/1.25)">−</button>
+            <button class="btn btn-sm" type="button" onclick="zoomStep('before', 1.25)">+</button>
+            <button class="btn btn-sm" type="button" onclick="resetView('before')">Vừa khung</button>
+            <span id="beforeZoomPct" class="muted" style="min-width:40px;text-align:center">100%</span>
+            <button class="btn btn-sm btn-primary" id="btnOrigBefore" type="button" disabled onclick="openOriginal('before')">Xem ảnh gốc</button>
+          </div>
+        </div>
+        <div class="muted">Đỏ: lỗ cũ • Cuộn: zoom • Kéo: di chuyển • Bấm lỗ để đối chiếu</div>
+        <div class="canvas-box">
+          <canvas id="beforeCanvas"></canvas>
+          <div id="beforeEmpty" class="canvas-empty">Chưa có ảnh</div>
+        </div>
+      </div>
+
+      <div class="img-card">
+        <div class="img-card-head">
+          <span class="img-card-title">Ảnh SAU — cũ &amp; mới</span>
+          <div class="zoom-tools">
+            <button class="btn btn-sm" type="button" onclick="zoomStep('after', 1/1.25)">−</button>
+            <button class="btn btn-sm" type="button" onclick="zoomStep('after', 1.25)">+</button>
+            <button class="btn btn-sm" type="button" onclick="resetView('after')">Vừa khung</button>
+            <span id="afterZoomPct" class="muted" style="min-width:40px;text-align:center">100%</span>
+            <button class="btn btn-sm btn-primary" id="btnOrigAfter" type="button" disabled onclick="openOriginal('after')">Xem ảnh gốc</button>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-sm active-mode" id="modeDefault" type="button" onclick="setAfterMode('default')">Bấm sửa / Kéo phải dời</button>
+            <button class="btn btn-sm" id="modeAdd" type="button" onclick="setAfterMode('add')">+ Vẽ thêm lỗ mới</button>
+            <button class="btn btn-sm" id="modePan" type="button" onclick="setAfterMode('pan')">Kéo di chuyển ảnh</button>
+          </div>
+          <span id="afterEditHint" class="muted">Đỏ: lỗ cũ • Xanh: lỗ mới • Cuộn: zoom • Esc: hủy</span>
+        </div>
+        <div id="redrawBanner" class="info-banner" hidden></div>
+        <div class="canvas-box">
+          <canvas id="afterCanvas" oncontextmenu="return false"></canvas>
+          <div id="afterEmpty" class="canvas-empty">Chưa có ảnh</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Bảng kiểm tra từng lỗ của cá nhân</h2>
+      <span class="muted">Số lỗ khớp với nhãn trên ảnh (không phải thứ tự phát bắn). Bấm dòng để làm nổi lỗ; Quản lý có thể đổi màu Đỏ/Xanh, tính/bỏ, vẽ lại hoặc xóa.</span>
+    </div>
+    <div class="hole-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Số lỗ</th>
+            <th>Tính điểm</th>
+            <th>Điểm</th>
+            <th>Tin cậy</th>
+            <th>Tâm mẫu (px)</th>
+            <th>Đối chiếu / lưu ý</th>
+            <th>Thao tác (Quản lý)</th>
+          </tr>
+        </thead>
+        <tbody id="holesBody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- Edit Hole Dialog (matching desktop open_hole_dialog) -->
+<div id="holeModal" class="modal-overlay" hidden>
+  <div class="modal-box modal-sm">
+    <div class="panel-head" style="margin-bottom:4px">
+      <h2 id="holeModalTitle">Sửa / xóa điểm</h2>
+      <button class="btn btn-sm" type="button" onclick="closeHoleModal()">Đóng</button>
+    </div>
+    <div id="holeModalDesc" class="muted"></div>
+    <div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;background:#f8fafc">
+      <div style="font-size:12px;font-weight:700;margin-bottom:6px">Đổi màu / loại lỗ</div>
+      <div class="muted" style="margin-bottom:8px"><span class="dot-red">Đỏ</span>: lỗ cũ, không cộng điểm. <span class="dot-green">Xanh</span>: lỗ mới, cộng điểm vùng.</div>
+      <div class="hole-actions-grid">
+        <button class="btn btn-sm" type="button" id="btnHoleOld" style="border-color:#fca5a5;color:#b91c1c">Đỏ — Lỗ cũ</button>
+        <button class="btn btn-sm" type="button" id="btnHoleNew" style="border-color:#86efac;color:#15803d">Xanh — Lỗ mới</button>
+        <button class="btn btn-sm" type="button" id="btnHoleToggle">Tính / Bỏ tính</button>
+      </div>
+    </div>
+    <div class="hole-actions-grid" style="justify-content:flex-end;margin-top:8px">
+      <button class="btn btn-danger btn-sm" type="button" id="btnHoleDelete">Xóa điểm này</button>
+      <button class="btn btn-primary btn-sm" type="button" id="btnHoleRedraw">Vẽ lại vòng tròn</button>
+      <button class="btn btn-sm" type="button" onclick="closeHoleModal()">Hủy</button>
+    </div>
+  </div>
+</div>
+
+<!-- Original Image Modal (matching desktop OriginalView) -->
+<div id="origModal" class="modal-overlay" hidden>
+  <div class="modal-box">
+    <div class="panel-head" style="margin-bottom:2px">
+      <h2 id="origModalTitle">Ảnh gốc</h2>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:13px;display:inline-flex;align-items:center;gap:5px;cursor:pointer">
+          <input type="checkbox" id="chkOrigOutline" checked onchange="drawView('orig')"> Hiện khung bia đã nhận diện
+        </label>
+        <button class="btn btn-sm" type="button" onclick="zoomStep('orig', 1/1.25)">−</button>
+        <button class="btn btn-sm" type="button" onclick="zoomStep('orig', 1.25)">+</button>
+        <button class="btn btn-sm" type="button" onclick="resetView('orig')">Vừa khung</button>
+        <button class="btn btn-sm" type="button" onclick="closeOrigModal()">Đóng</button>
+      </div>
+    </div>
+    <div id="origModalMeta" class="muted"></div>
+    <div class="orig-canvas-box">
+      <canvas id="origCanvas"></canvas>
+    </div>
+  </div>
+</div>
+
 <script>
-const $=id=>document.getElementById(id);async function api(path){const r=await fetch(path);if(!r.ok)throw Error(await r.text());return r.json()}
-const states={AUTO:'Tự động — chưa duyệt',NEEDS_REVIEW:'Cần kiểm tra',REVIEWED:'Đã kiểm tra',DEMO:'Thử nghiệm ảnh mẫu'};async function show(){if(!$('rounds').value)return;const r=await api('/api/real-rounds/'+encodeURIComponent($('rounds').value));$('summary').textContent=`${states[r.status]||'Bản cũ'} • ${r.shooter} (${r.shooter_code}) • ${r.unit} • Làn ${r.lane}, loạt ${r.series} • ${r.total_holes} lỗ • ${r.total_score} điểm`;$ ('warnings').textContent=(r.warnings||[]).join(' | ');for(const n of ['before','after','annotated'])$(n).src=r.image_urls[n];$('holes').replaceChildren();r.detections.forEach((h,i)=>{if(!h.selected)return;const tr=document.createElement('tr');for(const v of [i+1,h.template_point.map(x=>x.toFixed(1)).join(', '),h.score,h.source==='manual'?'Hiệu chỉnh thủ công':(r.status==='REVIEWED'?'Model; đã kiểm tra':'Model tự động')]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('holes').append(tr)})}
-async function load(){const old=$('rounds').value;const rows=await api('/api/real-rounds');$('rounds').replaceChildren();for(const r of rows){const o=document.createElement('option');o.value=r.id;o.textContent=`${r.created_at.slice(0,19)} • ${r.shooter} • làn ${r.lane} / loạt ${r.series} • ${states[r.status]||'Bản cũ'}`;$('rounds').append(o)}if(rows.some(r=>r.id===old))$('rounds').value=old;await show()}
-function safe(f){$('error').textContent='';f().catch(e=>$('error').textContent=e.message)}$('reload').onclick=()=>safe(load);$('rounds').onchange=()=>safe(show);safe(load);setInterval(()=>safe(load),5000);
-</script></html>
+const $ = id => document.getElementById(id);
+const STATES = {
+  AUTO: 'Tự động — chưa duyệt',
+  NEEDS_REVIEW: 'Cần kiểm tra',
+  REVIEWED: 'Đã kiểm tra',
+  DEMO: 'Thử nghiệm ảnh mẫu',
+};
+
+let managerToken = null;
+try { managerToken = localStorage.getItem('managerToken') || null; } catch (e) {}
+
+let allRounds = [];
+let selectedRoundId = null;
+let currentRound = null;
+let selectedHoleIdx = null;
+let afterMode = 'default'; // 'default' | 'add' | 'pan'
+let redrawHoleIdx = null;
+let savingEdit = false;
+
+const views = {
+  before: { canvas: null, img: null, url: null, scale: 1, panX: 0, panY: 0, fitPending: true },
+  after:  { canvas: null, img: null, url: null, scale: 1, panX: 0, panY: 0, fitPending: true },
+  orig:   { canvas: null, img: null, url: null, scale: 1, panX: 0, panY: 0, fitPending: true, info: null },
+};
+
+let dragState = null; // { kind, button, startClient, startImg, startPan, movingMarker, moved }
+
+function showError(msg) {
+  const el = $('errorBanner');
+  if (!msg) { el.hidden = true; el.textContent = ''; return; }
+  el.textContent = msg;
+  el.hidden = false;
+}
+
+function normText(v) {
+  return String(v || '')
+    .toLowerCase()
+    .replace(/đ/g, 'd')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso);
+    return d.toLocaleString('vi-VN', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+    });
+  } catch (e) {
+    return String(iso);
+  }
+}
+
+async function api(path, opt = {}) {
+  const headers = { ...(opt.headers || {}) };
+  if (managerToken && !headers['X-Manager-Token']) headers['X-Manager-Token'] = managerToken;
+  const r = await fetch(path, { ...opt, headers });
+  if (r.status === 401) {
+    managerToken = null;
+    try { localStorage.removeItem('managerToken'); } catch (e) {}
+    renderAuth();
+    renderAll();
+    throw new Error('Cần đăng nhập Quản lý để thực hiện thao tác này.');
+  }
+  if (!r.ok) {
+    let msg = await r.text();
+    try { const j = JSON.parse(msg); if (j.detail) msg = j.detail; } catch (e) {}
+    throw new Error(msg || `HTTP ${r.status}`);
+  }
+  return r.json();
+}
+
+function renderAuth() {
+  const bar = $('authBar');
+  if (managerToken) {
+    bar.innerHTML = `<span class="auth-badge">👤 QUẢN LÝ (được phép sửa)</span>
+      <button class="btn btn-sm" type="button" id="btnLogout">Đăng xuất</button>`;
+    $('btnLogout').onclick = async () => {
+      try { await fetch('/api/manager/logout', { method: 'POST', headers: { 'X-Manager-Token': managerToken } }); } catch (e) {}
+      managerToken = null;
+      try { localStorage.removeItem('managerToken'); } catch (e) {}
+      setAfterMode('default');
+      renderAuth();
+      renderAll();
+    };
+  } else {
+    bar.innerHTML = `<span style="font-size:12px;color:#cbd5e1">🔒 Quản lý:</span>
+      <input id="mgrPass" type="password" placeholder="Mật khẩu quản lý">
+      <button class="btn btn-sm btn-primary" type="button" id="btnLogin">Đăng nhập</button>`;
+    const doLogin = async () => {
+      const pw = $('mgrPass').value;
+      if (!pw) { showError('Nhập mật khẩu quản lý.'); return; }
+      try {
+        showError('');
+        const res = await fetch('/api/manager/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pw }),
+        });
+        if (!res.ok) throw new Error('Sai mật khẩu quản lý');
+        const data = await res.json();
+        managerToken = data.token;
+        try { localStorage.setItem('managerToken', managerToken); } catch (e) {}
+        renderAuth();
+        renderAll();
+      } catch (e) {
+        showError(e.message);
+      }
+    };
+    $('btnLogin').onclick = doLogin;
+    $('mgrPass').onkeydown = e => { if (e.key === 'Enter') doLogin(); };
+  }
+}
+
+function parseScoreFilter(raw) {
+  const s = raw.trim();
+  if (!s) return null;
+  let m = s.match(/^(\d+)\s*[-–]\s*(\d+)$/);
+  if (m) {
+    const a = Number(m[1]), b = Number(m[2]);
+    return score => score >= Math.min(a, b) && score <= Math.max(a, b);
+  }
+  m = s.match(/^(>=|<=|>|<|=)?\s*(\d+)$/);
+  if (m) {
+    const op = m[1] || '=', val = Number(m[2]);
+    if (op === '>=') return score => score >= val;
+    if (op === '<=') return score => score <= val;
+    if (op === '>') return score => score > val;
+    if (op === '<') return score => score < val;
+    return score => score === val;
+  }
+  return null;
+}
+
+function filteredRounds() {
+  const q = normText($('fQuery').value);
+  const scorePred = parseScoreFilter($('fScore').value);
+  const st = $('fStatus').value;
+  const dt = $('fDate').value;
+  const laneVal = $('fLane').value.trim();
+  return allRounds.filter(r => {
+    if (q) {
+      const hay = normText([r.shooter_code, r.shooter, r.unit, r.notes].join(' '));
+      if (!hay.includes(q)) return false;
+    }
+    if (scorePred && !scorePred(Number(r.total_score ?? 0))) return false;
+    if (st && r.status !== st) return false;
+    if (dt && r.shooting_date !== dt) return false;
+    if (laneVal && String(r.lane) !== laneVal) return false;
+    return true;
+  });
+}
+
+function renderRoundsTable() {
+  const rows = filteredRounds();
+  $('roundCount').textContent = `Hiển thị ${rows.length} / ${allRounds.length} loạt`;
+  const tbody = $('roundsBody');
+  tbody.replaceChildren();
+  if (!rows.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 10;
+    td.className = 'muted';
+    td.textContent = allRounds.length ? 'Không có loạt nào khớp điều kiện lọc.' : 'Chưa có loạt bắn nào được gửi lên Server.';
+    tr.append(td);
+    tbody.append(tr);
+    return;
+  }
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    if (r.id === selectedRoundId) tr.className = 'selected-row';
+    const timeStr = fmtDateTime(r.before_acquired_at || r.created_at);
+    const cells = [
+      timeStr,
+      r.shooting_date || (r.created_at || '').slice(0, 10) || '—',
+      r.shooter_code || '—',
+      r.shooter || '—',
+      r.unit || '—',
+      `Bệ ${r.lane ?? '—'} · Loạt ${r.series ?? '—'}`,
+      r.total_holes ?? 0,
+      r.total_score ?? 0,
+      null,
+      `v${r.revision || 1}`,
+    ];
+    cells.forEach((val, idx) => {
+      const td = document.createElement('td');
+      if (idx === 7) {
+        const b = document.createElement('b');
+        b.textContent = val;
+        td.append(b);
+      } else if (idx === 8) {
+        const sp = document.createElement('span');
+        const st = r.status || 'AUTO';
+        sp.className = `badge ${st}`;
+        sp.textContent = STATES[st] || st;
+        td.append(sp);
+      } else {
+        td.textContent = val;
+      }
+      tr.append(td);
+    });
+    tr.onclick = () => selectRound(r.id);
+    tbody.append(tr);
+  }
+}
+
+async function selectRound(id, preserveView = false) {
+  selectedRoundId = id;
+  if (!preserveView) {
+    selectedHoleIdx = null;
+    redrawHoleIdx = null;
+  }
+  renderRoundsTable();
+  try {
+    showError('');
+    const data = await api('/api/real-rounds/' + encodeURIComponent(id));
+    currentRound = data;
+    loadRoundImages(data, preserveView);
+    renderAll();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+function loadRoundImages(round, preserveView) {
+  for (const kind of ['before', 'after']) {
+    const state = views[kind];
+    const url = (round.image_urls || {})[kind] || null;
+    $(`${kind}Empty`).style.display = url ? 'none' : 'flex';
+    if (!url) {
+      state.img = null;
+      state.url = null;
+      drawView(kind);
+      continue;
+    }
+    if (state.url === url && state.img) {
+      drawView(kind);
+      continue;
+    }
+    const img = new Image();
+    img.onload = () => {
+      state.img = img;
+      state.url = url;
+      if (!preserveView || state.fitPending) fitView(kind);
+      else drawView(kind);
+    };
+    img.src = url;
+  }
+}
+
+function syncCanvasSize(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(100, Math.round(rect.width));
+  const h = Math.max(100, Math.round(rect.height));
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+    return true;
+  }
+  return false;
+}
+
+function fitView(kind) {
+  const s = views[kind];
+  if (!s.canvas || !s.img) return;
+  syncCanvasSize(s.canvas);
+  const cw = s.canvas.width, ch = s.canvas.height;
+  s.scale = Math.min(cw / s.img.width, ch / s.img.height);
+  s.panX = (cw - s.img.width * s.scale) / 2;
+  s.panY = (ch - s.img.height * s.scale) / 2;
+  s.fitPending = false;
+  drawView(kind);
+}
+
+function resetView(kind) {
+  fitView(kind);
+}
+
+function zoomStep(kind, factor, anchorX = null, anchorY = null) {
+  const s = views[kind];
+  if (!s.img || !s.canvas) return;
+  syncCanvasSize(s.canvas);
+  const cx = anchorX == null ? s.canvas.width / 2 : anchorX;
+  const cy = anchorY == null ? s.canvas.height / 2 : anchorY;
+  const ix = (cx - s.panX) / s.scale;
+  const iy = (cy - s.panY) / s.scale;
+  const minScale = Math.min(0.1, Math.min(s.canvas.width / s.img.width, s.canvas.height / s.img.height) * 0.5);
+  s.scale = Math.max(minScale, Math.min(8, s.scale * factor));
+  s.panX = cx - ix * s.scale;
+  s.panY = cy - iy * s.scale;
+  drawView(kind);
+}
+
+function drawView(kind) {
+  const s = views[kind];
+  if (!s.canvas) return;
+  syncCanvasSize(s.canvas);
+  const ctx = s.canvas.getContext('2d');
+  ctx.clearRect(0, 0, s.canvas.width, s.canvas.height);
+  if (!s.img) return;
+  ctx.imageSmoothingEnabled = s.scale < 2.2;
+  ctx.drawImage(s.img, s.panX, s.panY, s.img.width * s.scale, s.img.height * s.scale);
+
+  if (kind === 'orig') {
+    const info = s.info || {};
+    if ($('chkOrigOutline').checked && Array.isArray(info.outline_original) && info.outline_original.length >= 3) {
+      ctx.save();
+      ctx.strokeStyle = '#00dc00';
+      ctx.lineWidth = Math.max(2, s.scale * Math.max(2, Math.round(Math.max(s.img.width, s.img.height) / 400)));
+      ctx.beginPath();
+      info.outline_original.forEach((pt, idx) => {
+        const px = s.panX + pt[0] * s.scale;
+        const py = s.panY + pt[1] * s.scale;
+        if (idx === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      });
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+    }
+    return;
+  }
+
+  const pctEl = $(`${kind}ZoomPct`);
+  if (pctEl) pctEl.textContent = `${Math.round(s.scale * 100)}%`;
+  if (!currentRound) return;
+
+  const items = kind === 'before' ? (currentRound.before_markers || []) : (currentRound.after_markers || []);
+  let selectedMatch = null;
+  if (kind === 'before' && selectedHoleIdx != null) {
+    const sel = (currentRound.detections || [])[selectedHoleIdx];
+    if (sel && sel.matched_before != null) selectedMatch = sel.matched_before;
+  } else if (kind === 'after') {
+    selectedMatch = selectedHoleIdx;
+  }
+
+  for (const item of items) {
+    const isSel = selectedMatch != null && item.index === selectedMatch;
+    const x = s.panX + item.point[0] * s.scale;
+    const y = s.panY + item.point[1] * s.scale;
+    const r = Math.max(4, (item.radius || 12) * s.scale);
+    const color = item.old ? '#ef4444' : '#16a34a';
+
+    if (isSel) {
+      ctx.beginPath();
+      ctx.arc(x, y, r + 4, 0, Math.PI * 2);
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = isSel ? 3 : 2;
+    ctx.stroke();
+
+    ctx.font = 'bold 12px "Segoe UI", sans-serif';
+    const tx = Math.max(4, Math.min(s.canvas.width - 52, x + r + 4));
+    const ty = Math.max(14, Math.min(s.canvas.height - 4, y - r + 2));
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#ffffff';
+    ctx.strokeText(item.label, tx, ty);
+    ctx.fillStyle = color;
+    ctx.fillText(item.label, tx, ty);
+  }
+
+  if (kind === 'after' && dragState && dragState.draftCircle) {
+    const d = dragState.draftCircle;
+    ctx.save();
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.arc(s.panX + d.x * s.scale, s.panY + d.y * s.scale, Math.max(3, d.r * s.scale), 0, Math.PI * 2);
+    ctx.strokeStyle = d.old ? '#ef4444' : '#22c55e';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function canvasToImage(kind, ev) {
+  const s = views[kind];
+  const rect = s.canvas.getBoundingClientRect();
+  const cx = (ev.clientX - rect.left) * (s.canvas.width / rect.width);
+  const cy = (ev.clientY - rect.top) * (s.canvas.height / rect.height);
+  return {
+    cx, cy,
+    ix: (cx - s.panX) / s.scale,
+    iy: (cy - s.panY) / s.scale,
+  };
+}
+
+function hitMarker(kind, ix, iy) {
+  if (!currentRound) return null;
+  const s = views[kind];
+  const items = kind === 'before' ? (currentRound.before_markers || []) : (currentRound.after_markers || []);
+  let best = null, bestDist = Infinity;
+  for (const item of items) {
+    const dist = Math.hypot(item.point[0] - ix, item.point[1] - iy);
+    const thresh = Math.max(item.radius || 12, 18 / s.scale);
+    if (dist <= thresh && dist < bestDist) {
+      best = item;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+function setAfterMode(mode) {
+  afterMode = mode;
+  if (mode !== 'add') redrawHoleIdx = null;
+  $('modeDefault').classList.toggle('active-mode', mode === 'default');
+  $('modeAdd').classList.toggle('active-mode', mode === 'add');
+  $('modePan').classList.toggle('active-mode', mode === 'pan');
+  const canvas = views.after.canvas;
+  if (canvas) canvas.classList.toggle('edit-cursor', mode === 'add' || redrawHoleIdx != null);
+  updateRedrawBanner();
+}
+
+function updateRedrawBanner() {
+  const el = $('redrawBanner');
+  if (redrawHoleIdx == null || !currentRound) {
+    el.hidden = true;
+    el.textContent = '';
+    return;
+  }
+  const label = (currentRound.hole_labels || [])[redrawHoleIdx] || `#${redrawHoleIdx + 1}`;
+  el.textContent = `Đang vẽ lại ${label}: giữ chuột trái kéo từ tâm mới ra mép vòng tròn trên Ảnh SAU. Bấm Esc để hủy.`;
+  el.hidden = false;
+}
+
+function startRedrawHole(index) {
+  if (!managerToken) { showError('Đăng nhập Quản lý ở góc trên bên phải để chỉnh sửa.'); return; }
+  selectedHoleIdx = index;
+  redrawHoleIdx = index;
+  setAfterMode('add');
+  renderHolesTable();
+  drawView('before');
+  drawView('after');
+}
+
+function attachCanvasEvents(kind) {
+  const canvas = views[kind].canvas;
+  canvas.addEventListener('wheel', ev => {
+    ev.preventDefault();
+    const s = views[kind];
+    if (!s.img) return;
+    const { cx, cy } = canvasToImage(kind, ev);
+    zoomStep(kind, ev.deltaY < 0 ? 1.2 : 1 / 1.2, cx, cy);
+  }, { passive: false });
+
+  canvas.addEventListener('mousedown', ev => {
+    const s = views[kind];
+    if (!s.img) return;
+    const pos = canvasToImage(kind, ev);
+    const hit = (kind === 'before' || kind === 'after') ? hitMarker(kind, pos.ix, pos.iy) : null;
+    const canEditAfter = kind === 'after' && !!managerToken && !savingEdit && currentRound;
+
+    let action = 'pan';
+    let movingMarker = null;
+    if (canEditAfter) {
+      if (ev.button === 2) {
+        if (hit && afterMode !== 'pan') {
+          action = 'move';
+          movingMarker = hit;
+        } else {
+          action = 'pan';
+        }
+      } else if (ev.button === 0) {
+        if (redrawHoleIdx != null || afterMode === 'add') {
+          action = 'draw';
+        } else if (afterMode === 'pan') {
+          action = 'pan';
+        } else if (hit) {
+          action = 'click_hole';
+          movingMarker = hit;
+        } else {
+          action = 'draw';
+        }
+      }
+    }
+
+    dragState = {
+      kind,
+      button: ev.button,
+      action,
+      startCx: pos.cx,
+      startCy: pos.cy,
+      startIx: pos.ix,
+      startIy: pos.iy,
+      startPanX: s.panX,
+      startPanY: s.panY,
+      movingMarker,
+      moved: false,
+      draftCircle: null,
+    };
+  });
+
+  window.addEventListener('mousemove', ev => {
+    if (!dragState || dragState.kind !== kind) return;
+    const s = views[kind];
+    if (!s.img) return;
+    const pos = canvasToImage(kind, ev);
+    const distPx = Math.hypot(pos.cx - dragState.startCx, pos.cy - dragState.startCy);
+    if (distPx >= 5) dragState.moved = true;
+
+    if (dragState.action === 'pan') {
+      s.panX = dragState.startPanX + (pos.cx - dragState.startCx);
+      s.panY = dragState.startPanY + (pos.cy - dragState.startCy);
+      drawView(kind);
+    } else if (dragState.action === 'move' && dragState.movingMarker && dragState.moved) {
+      const m = dragState.movingMarker;
+      const nx = Math.max(0, Math.min(s.img.width - 1, m.point[0] + (pos.ix - dragState.startIx)));
+      const ny = Math.max(0, Math.min(s.img.height - 1, m.point[1] + (pos.iy - dragState.startIy)));
+      dragState.draftCircle = { x: nx, y: ny, r: m.radius || 12, old: m.old };
+      drawView(kind);
+    } else if (dragState.action === 'draw' && dragState.moved) {
+      const sx = dragState.startIx, sy = dragState.startIy;
+      if (0 <= sx && sx < s.img.width && 0 <= sy && sy < s.img.height) {
+        const rawR = Math.hypot(pos.ix - sx, pos.iy - sy);
+        const r = Math.max(0, Math.min(rawR, sx, sy, s.img.width - 1 - sx, s.img.height - 1 - sy));
+        dragState.draftCircle = { x: sx, y: sy, r, old: false };
+        drawView(kind);
+      }
+    }
+  });
+
+  window.addEventListener('mouseup', async ev => {
+    if (!dragState || dragState.kind !== kind) return;
+    const d = dragState;
+    const s = views[kind];
+    dragState = null;
+    if (!s.img) return;
+    const pos = canvasToImage(kind, ev);
+
+    if (d.action === 'move' && d.movingMarker && d.moved) {
+      const m = d.movingMarker;
+      const nx = Math.max(0, Math.min(s.img.width - 1, m.point[0] + (pos.ix - d.startIx)));
+      const ny = Math.max(0, Math.min(s.img.height - 1, m.point[1] + (pos.iy - d.startIy)));
+      drawView(kind);
+      await submitEdit({ action: 'move', index: m.index, point: [nx, ny], radius: m.radius || 12 });
+      return;
+    }
+
+    if (d.action === 'draw' && d.moved && d.draftCircle) {
+      const { x, y, r } = d.draftCircle;
+      drawView(kind);
+      if (r * s.scale >= 5 && 0 <= x && x < s.img.width && 0 <= y && y < s.img.height) {
+        if (redrawHoleIdx != null) {
+          const targetIdx = redrawHoleIdx;
+          redrawHoleIdx = null;
+          setAfterMode('default');
+          await submitEdit({ action: 'move', index: targetIdx, point: [x, y], radius: r });
+        } else {
+          await submitEdit({ action: 'add', point: [x, y], radius: r });
+        }
+      }
+      return;
+    }
+
+    drawView(kind);
+    if (!d.moved && d.button === 0 && (kind === 'before' || kind === 'after')) {
+      const hit = hitMarker(kind, pos.ix, pos.iy);
+      if (!hit) {
+        selectedHoleIdx = null;
+        renderHolesTable();
+        drawView('before');
+        drawView('after');
+        return;
+      }
+      if (kind === 'before') {
+        selectedHoleIdx = hit.matched_after != null ? hit.matched_after : null;
+        renderHolesTable();
+        drawView('before');
+        drawView('after');
+      } else {
+        selectedHoleIdx = hit.index;
+        renderHolesTable();
+        drawView('before');
+        drawView('after');
+        if (managerToken) {
+          openHoleModal(hit.index);
+        } else {
+          showError('Đăng nhập Quản lý ở góc trên bên phải để sửa, di chuyển hoặc đổi màu lỗ.');
+        }
+      }
+    }
+  });
+}
+
+async function submitEdit(payload) {
+  if (!currentRound || savingEdit) return;
+  if (!managerToken) {
+    showError('Đăng nhập Quản lý ở góc trên bên phải để chỉnh sửa.');
+    return;
+  }
+  savingEdit = true;
+  showError('');
+  try {
+    const updated = await api(`/api/real-rounds/${encodeURIComponent(currentRound.id)}/edit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expected_revision: currentRound.revision || 1, ...payload }),
+    });
+    currentRound = updated;
+    if (selectedHoleIdx != null && selectedHoleIdx >= (updated.detections || []).length) {
+      selectedHoleIdx = null;
+    }
+    loadRoundImages(updated, true);
+    await loadRoundsList(false);
+    renderAll();
+  } catch (e) {
+    showError(e.message);
+    drawView('after');
+  } finally {
+    savingEdit = false;
+  }
+}
+
+function renderSummary() {
+  if (!currentRound) {
+    $('summaryMain').textContent = 'Chọn một loạt bắn trong bảng phía trên để kiểm tra.';
+    $('summaryMeta').textContent = '';
+    $('warningsBar').textContent = '';
+    $('btnReview').disabled = true;
+    $('btnOrigBefore').disabled = true;
+    $('btnOrigAfter').disabled = true;
+    return;
+  }
+  const r = currentRound;
+  const st = r.status || 'AUTO';
+  const stLabel = STATES[st] || st;
+  $('summaryMain').innerHTML = `<span class="badge ${st}">${stLabel}</span>
+    &nbsp;${escapeHtml(r.shooter)} (${escapeHtml(r.shooter_code)}) • ${escapeHtml(r.unit)}
+    • Bệ ${r.lane}, Loạt ${r.series} • <b>${r.total_holes} lỗ</b> • <b>${r.total_score} điểm</b> • Phiên bản v${r.revision || 1}`;
+  const parts = [
+    `Ngày bắn: ${r.shooting_date || (r.created_at || '').slice(0, 10) || '—'}`,
+    `Chụp trước: ${fmtDateTime(r.before_acquired_at || r.created_at)}`,
+    `Chụp sau: ${fmtDateTime(r.after_acquired_at)}`,
+    `Cập nhật: ${fmtDateTime(r.updated_at)}`,
+    `Kiểm tra: ${r.reviewed_at ? fmtDateTime(r.reviewed_at) : 'Chưa xác nhận'}`,
+  ];
+  if (r.notes) parts.push(`Ghi chú: ${r.notes}`);
+  $('summaryMeta').textContent = parts.join(' • ');
+  $('warningsBar').textContent = (r.warnings || []).length ? `⚠ ${(r.warnings || []).join(' | ')}` : '';
+  $('btnReview').disabled = !managerToken;
+  $('btnOrigBefore').disabled = !((r.image_urls || {}).before_original);
+  $('btnOrigAfter').disabled = !((r.image_urls || {}).after_original);
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderHolesTable() {
+  const tbody = $('holesBody');
+  tbody.replaceChildren();
+  if (!currentRound) return;
+  const holes = currentRound.detections || [];
+  const labels = currentRound.hole_labels || [];
+  if (!holes.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 7;
+    td.className = 'muted';
+    td.textContent = 'Chưa có lỗ nào trong loạt này.';
+    tr.append(td);
+    tbody.append(tr);
+    return;
+  }
+
+  holes.forEach((h, i) => {
+    const tr = document.createElement('tr');
+    if (i === selectedHoleIdx) tr.className = 'selected-row';
+    const isExcluded = !!h.excluded;
+    const isOldHole = (h.classification ? h.classification === 'old' : h.matched_before != null);
+    const lbl = labels[i] || (isExcluded ? '—' : (isOldHole ? 'C?' : 'M?'));
+
+    let note = isExcluded ? 'Đã xóa / loại bỏ' : (isOldHole ? 'Lỗ cũ' : 'Mới');
+    if (!isExcluded && !h.selected) note += ' • Không cộng điểm';
+    else if (!isExcluded && h.score === 0) note += ' • Ngoài vùng điểm (pixel 0)';
+    if (Array.isArray(h.issues) && h.issues.length) note += ' • ' + h.issues.join('; ');
+
+    const confText = h.source === 'manual' ? 'Thủ công' : `${Math.round((h.confidence || 0) * 100)}%`;
+    const ptText = Array.isArray(h.template_point) ? h.template_point.map(v => Number(v).toFixed(1)).join(', ') : '—';
+
+    const vals = [
+      lbl,
+      h.selected ? 'Có' : 'Bỏ',
+      h.selected ? h.score : 0,
+      confText,
+      ptText,
+      note,
+    ];
+    vals.forEach((v, colIdx) => {
+      const td = document.createElement('td');
+      if (colIdx === 0) {
+        td.innerHTML = isExcluded ? `<span class="muted">${lbl}</span>` : `<span class="${isOldHole ? 'dot-red' : 'dot-green'}">${escapeHtml(lbl)}</span>`;
+      } else if (colIdx === 2) {
+        const b = document.createElement('b');
+        b.textContent = v;
+        td.append(b);
+      } else {
+        if (colIdx === 5) td.className = 'wrap';
+        td.textContent = v;
+      }
+      tr.append(td);
+    });
+
+    const actTd = document.createElement('td');
+    const dis = managerToken ? '' : 'disabled';
+    if (isExcluded) {
+      actTd.innerHTML = `<button class="btn btn-sm" ${dis} data-act="restore">Khôi phục</button>
+        <button class="btn btn-sm" ${dis} data-act="old">Đỏ (Cũ)</button>
+        <button class="btn btn-sm" ${dis} data-act="new">Xanh (Mới)</button>`;
+    } else {
+      const swapTarget = isOldHole ? 'new' : 'old';
+      const swapText = isOldHole ? '→ Xanh (Mới)' : '→ Đỏ (Cũ)';
+      actTd.innerHTML = `<button class="btn btn-sm" ${dis} data-act="${swapTarget}">${swapText}</button>
+        <button class="btn btn-sm" ${dis} data-act="toggle">${h.selected ? 'Bỏ tính' : 'Tính điểm'}</button>
+        <button class="btn btn-sm" ${dis} data-act="redraw">Vẽ lại</button>
+        <button class="btn btn-sm btn-danger" ${dis} data-act="delete">Xóa</button>`;
+    }
+    actTd.querySelectorAll('button').forEach(btn => {
+      btn.onclick = async ev => {
+        ev.stopPropagation();
+        const act = btn.dataset.act;
+        if (act === 'redraw') startRedrawHole(i);
+        else if (act === 'old' || act === 'new') await submitEdit({ action: 'classify', index: i, classification: act });
+        else await submitEdit({ action: act, index: i });
+      };
+    });
+    tr.append(actTd);
+
+    tr.onclick = () => {
+      selectedHoleIdx = i;
+      renderHolesTable();
+      drawView('before');
+      drawView('after');
+    };
+    tbody.append(tr);
+  });
+}
+
+function renderAll() {
+  renderRoundsTable();
+  renderSummary();
+  renderHolesTable();
+  drawView('before');
+  drawView('after');
+  updateRedrawBanner();
+}
+
+function openHoleModal(index) {
+  if (!currentRound) return;
+  const h = (currentRound.detections || [])[index];
+  if (!h) return;
+  const lbl = (currentRound.hole_labels || [])[index] || `#${index + 1}`;
+  $('holeModalTitle').textContent = `Sửa / xóa điểm ${lbl}`;
+  $('holeModalDesc').textContent = `${lbl} — ${h.selected ? h.score : 0} điểm • Chọn thao tác bên dưới:`;
+  $('btnHoleOld').onclick = async () => { closeHoleModal(); await submitEdit({ action: 'classify', index, classification: 'old' }); };
+  $('btnHoleNew').onclick = async () => { closeHoleModal(); await submitEdit({ action: 'classify', index, classification: 'new' }); };
+  $('btnHoleToggle').onclick = async () => { closeHoleModal(); await submitEdit({ action: 'toggle', index }); };
+  $('btnHoleDelete').onclick = async () => { closeHoleModal(); await submitEdit({ action: 'delete', index }); };
+  $('btnHoleRedraw').onclick = () => { closeHoleModal(); startRedrawHole(index); };
+  $('holeModal').hidden = false;
+}
+
+function closeHoleModal() {
+  $('holeModal').hidden = true;
+}
+
+function openOriginal(kind) {
+  if (!currentRound) return;
+  const url = (currentRound.image_urls || {})[`${kind}_original`];
+  if (!url) {
+    showError(`Chưa có ảnh gốc của ảnh ${kind === 'before' ? 'trước' : 'sau'}.`);
+    return;
+  }
+  const info = currentRound[`${kind}_rectification`] || {};
+  $('origModalTitle').textContent = `Ảnh gốc — ảnh ${kind === 'before' ? 'TRƯỚC' : 'SAU'}`;
+  const hasQuad = Array.isArray(info.outline_original) && info.outline_original.length >= 3;
+  $('chkOrigOutline').disabled = !hasQuad;
+  $('chkOrigOutline').checked = hasQuad;
+  $('origModal').hidden = false;
+
+  const s = views.orig;
+  s.info = info;
+  const img = new Image();
+  img.onload = () => {
+    s.img = img;
+    s.url = url;
+    let text = `Ảnh gốc ${img.width}×${img.height}px`;
+    if (hasQuad) {
+      text += ` • Khung xanh: vùng bia nhận diện • ${info.method || ''} • ${info.inliers || 0}/${info.matches || 0} điểm khớp, sai số ${(info.rmse_px || 0).toFixed(2)}px`;
+    } else if (info.failed) {
+      text += ` • Không nắn được: ${info.failed}`;
+    }
+    $('origModalMeta').textContent = `${text} | Cuộn: phóng to; kéo: di chuyển`;
+    fitView('orig');
+  };
+  img.onerror = () => { showError('Không tải được ảnh gốc.'); closeOrigModal(); };
+  img.src = url;
+}
+
+function closeOrigModal() {
+  $('origModal').hidden = true;
+}
+
+async function loadRoundsList(autoSelect = true) {
+  const rows = await api('/api/real-rounds');
+  allRounds = rows;
+  if (autoSelect && (!selectedRoundId || !rows.some(r => r.id === selectedRoundId))) {
+    const visible = filteredRounds();
+    if (visible.length) await selectRound(visible[0].id);
+    else if (rows.length) await selectRound(rows[0].id);
+    else renderAll();
+  } else {
+    renderRoundsTable();
+  }
+}
+
+$('btnReview').onclick = async () => {
+  if (!currentRound) return;
+  if (!confirm('Xác nhận đã kiểm tra căn chỉnh, lỗ cũ/mới và điểm của loạt này?')) return;
+  await submitEdit({ action: 'review' });
+};
+
+$('btnReload').onclick = async () => {
+  showError('');
+  try {
+    await loadRoundsList(false);
+    if (selectedRoundId) await selectRound(selectedRoundId, true);
+  } catch (e) {
+    showError(e.message);
+  }
+};
+
+$('btnClearFilters').onclick = () => {
+  $('fQuery').value = '';
+  $('fScore').value = '';
+  $('fStatus').value = '';
+  $('fDate').value = '';
+  $('fLane').value = '';
+  renderRoundsTable();
+};
+
+['fQuery', 'fScore', 'fStatus', 'fDate', 'fLane'].forEach(id => {
+  $(id).addEventListener('input', renderRoundsTable);
+  $(id).addEventListener('change', renderRoundsTable);
+});
+
+$('holeModal').onclick = e => { if (e.target === $('holeModal')) closeHoleModal(); };
+$('origModal').onclick = e => { if (e.target === $('origModal')) closeOrigModal(); };
+
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (!$('holeModal').hidden) closeHoleModal();
+    else if (!$('origModal').hidden) closeOrigModal();
+    else if (redrawHoleIdx != null || dragState) {
+      dragState = null;
+      redrawHoleIdx = null;
+      setAfterMode('default');
+      drawView('after');
+    }
+  }
+});
+
+views.before.canvas = $('beforeCanvas');
+views.after.canvas = $('afterCanvas');
+views.orig.canvas = $('origCanvas');
+attachCanvasEvents('before');
+attachCanvasEvents('after');
+attachCanvasEvents('orig');
+
+const ro = new ResizeObserver(() => {
+  drawView('before');
+  drawView('after');
+  if (!$('origModal').hidden) drawView('orig');
+});
+ro.observe($('beforeCanvas'));
+ro.observe($('afterCanvas'));
+ro.observe($('origCanvas'));
+
+renderAuth();
+loadRoundsList(true).catch(e => showError(e.message));
+setInterval(() => {
+  if (dragState || savingEdit || !$('holeModal').hidden || !$('origModal').hidden) return;
+  api('/api/real-rounds').then(rows => {
+    allRounds = rows;
+    renderRoundsTable();
+  }).catch(() => {});
+}, 10000);
+</script>
+</body>
+</html>

@@ -35,6 +35,10 @@ class DesktopLayout(unittest.TestCase):
         self.app.saved=True;self.app.refresh()
     def test_startup_two_images_no_confirmation_or_roster_popup(self):
         self.assertEqual(len(self.app.views),2)
+        self.assertEqual(set(self.app.original_buttons),{'before','after'})
+        self.assertEqual([self.app.original_buttons[k].cget('text') for k in ('before','after')],['Xem ảnh gốc','Xem ảnh gốc'])
+        self.assertEqual(self.app.inspection_panel.winfo_manager(),'')
+        self.assertTrue(self.app.queue_table.winfo_exists())
         self.assertTrue(self.app.config['confirmed'])
         self.assertEqual(self.app.roster_window.state(),'withdrawn')
         self.assertEqual(len(self.app.notebook.tabs()),3)
@@ -82,9 +86,24 @@ class DesktopLayout(unittest.TestCase):
         self.assertEqual(self.app.result['total_score'],10)
         payload=self.store.load_payload(self.app.round_id)
         self.assertEqual(payload['total_score'],10);self.assertEqual(payload['revision'],4)
+    def test_after_preview_from_main_tab_is_readonly(self):
+        from types import SimpleNamespace
+        self.seed()
+        self.app.open_image('after');window=self.app.zoom_windows['after'];window.update()
+        self.assertFalse(window.editable)
+        self.assertIn('chỉ xem',window.title().lower())
+        zoom=window.zoom;zoom.scale=1.;zoom.draw();zoom.canvas.xview_moveto(0);zoom.canvas.yview_moveto(0)
+        with patch.object(self.app,'set_manual_hole') as save:
+            window.select_hole([500,500])
+            self.assertEqual(self.app.tree.selection(),('1',))
+            self.assertIsNone(window.hole_dialog)
+            start=SimpleNamespace(x=150,y=160);end=SimpleNamespace(x=200,y=200)
+            zoom.down(start);zoom.pan(end);zoom.up(end)
+            zoom.right_down(SimpleNamespace(x=500,y=500));zoom.right_pan(end);zoom.right_up(end)
+            save.assert_not_called()
     def test_drag_circle_uses_zoomed_scrolled_coordinates(self):
         from types import SimpleNamespace
-        self.seed();self.app.open_image('after');window=self.app.zoom_windows['after'];window.update()
+        self.seed();self.app.open_image('after',editable=True);window=self.app.zoom_windows['after'];window.update()
         zoom=window.zoom;zoom.scale=2.;zoom.draw();zoom.canvas.xview_moveto(.1);zoom.canvas.yview_moveto(.1)
         start=SimpleNamespace(x=150,y=160);end=SimpleNamespace(x=190,y=160)
         expected=[zoom.canvas.canvasx(start.x)/2,zoom.canvas.canvasy(start.y)/2]
@@ -101,7 +120,7 @@ class DesktopLayout(unittest.TestCase):
         from tkinter import ttk
         self.seed();self.app.meta=dict(shooter_code='DEMO',shooter='Demo',unit='Demo',lane=1,series=1,demo=True)
         self.app.round_id=str(uuid.uuid4());self.app.persist()
-        self.app.open_image('after');window=self.app.zoom_windows['after'];window.select_hole([500,500])
+        self.app.open_image('after',editable=True);window=self.app.zoom_windows['after'];window.select_hole([500,500])
         dialog=window.hole_dialog;self.assertTrue(dialog.winfo_exists())
         buttons=[child for frame in dialog.winfo_children() for child in frame.winfo_children() if isinstance(child,ttk.Button)]
         next(button for button in buttons if button.cget('text')=='Xóa điểm này').invoke()
@@ -113,7 +132,7 @@ class DesktopLayout(unittest.TestCase):
         from types import SimpleNamespace
         self.seed();self.app.meta=dict(shooter_code='DEMO',shooter='Demo',unit='Demo',lane=1,series=1,demo=True)
         self.app.round_id=str(uuid.uuid4());self.app.persist()
-        self.app.open_image('after');window=self.app.zoom_windows['after'];window.update()
+        self.app.open_image('after',editable=True);window=self.app.zoom_windows['after'];window.update()
         zoom=window.zoom;zoom.scale=2.;zoom.draw();zoom.canvas.xview_moveto(.15);zoom.canvas.yview_moveto(.15)
         sx=500*2-zoom.canvas.canvasx(0);sy=500*2-zoom.canvas.canvasy(0)
         start=SimpleNamespace(x=int(sx),y=int(sy));end=SimpleNamespace(x=int(sx-800),y=int(sy-800))
@@ -126,7 +145,7 @@ class DesktopLayout(unittest.TestCase):
         self.assertEqual(self.store.load_payload(self.app.round_id)['total_score'],0)
     def test_right_click_and_empty_drag_do_not_add_or_save(self):
         from types import SimpleNamespace
-        self.seed();self.app.open_image('after');window=self.app.zoom_windows['after'];window.update()
+        self.seed();self.app.open_image('after',editable=True);window=self.app.zoom_windows['after'];window.update()
         zoom=window.zoom;zoom.scale=1.;zoom.draw();zoom.canvas.xview_moveto(0);zoom.canvas.yview_moveto(0)
         hit=SimpleNamespace(x=500,y=500);empty=SimpleNamespace(x=50,y=50);end=SimpleNamespace(x=90,y=90)
         with patch.object(self.app,'set_manual_hole') as save:
@@ -138,7 +157,7 @@ class DesktopLayout(unittest.TestCase):
         from tkinter import ttk
         self.seed();self.app.meta=dict(shooter_code='DEMO',shooter='Demo',unit='Demo',lane=1,series=1,demo=True)
         self.app.round_id=str(uuid.uuid4());self.app.persist();self.app.set_manual_hole([451,453],radius=16)
-        self.app.open_image('after');window=self.app.zoom_windows['after'];window.open_hole_dialog(1)
+        self.app.open_image('after',editable=True);window=self.app.zoom_windows['after'];window.open_hole_dialog(1)
         buttons=[child for frame in window.hole_dialog.winfo_children() for child in frame.winfo_children() if isinstance(child,ttk.Button)]
         next(button for button in buttons if button.cget('text')=='Đỏ — Lỗ cũ').invoke()
         self.assertEqual(hole_labels(self.app.result['detections']),['C1','C2','M1'])

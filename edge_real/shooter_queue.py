@@ -79,30 +79,38 @@ class ShooterQueue:
         self.queue_path = self.store.root / 'shooting_queue.json'
         self.queue_state = None
         self._updating_queue_ui = False
-        panel = ttk.LabelFrame(parent, text='THỨ TỰ NGƯỜI BẮN')
-        panel.pack(fill='x', padx=5, pady=(7, 9))
+        panel = ttk.Frame(parent)
+        panel.pack(fill='x')
         toolbar = ttk.Frame(panel)
-        toolbar.pack(fill='x', padx=6, pady=4)
-        self.button(toolbar, 'Nạp danh sách CSV', self.queue_import_csv).pack(side='left', padx=3)
-        self.button(toolbar, 'Chọn người đang bắn', self.queue_choose_selected).pack(side='left', padx=3)
-        self.button(toolbar, 'Người tiếp theo', self.queue_next).pack(side='left', padx=3)
+        toolbar.pack(fill='x', pady=(0, 2))
+        self.button(toolbar, 'Nạp danh sách CSV', self.queue_import_csv).pack(fill='x')
         self.queue_count = tk.StringVar(value='Chưa nạp danh sách')
-        ttk.Label(toolbar, textvariable=self.queue_count).pack(side='right', padx=8)
+        ttk.Label(panel, textvariable=self.queue_count, anchor='w', wraplength=290, justify='left').pack(fill='x', pady=(2, 4))
         table_frame = ttk.Frame(panel)
-        table_frame.pack(fill='x', padx=6, pady=(0, 5))
-        cols = [('no', 'STT', 55), ('code', 'Mã', 120), ('name', 'Họ tên', 240),
-                ('unit', 'Đơn vị', 200), ('state', 'Trạng thái', 160)]
-        self.queue_table = ttk.Treeview(table_frame, columns=[v[0] for v in cols],
-                                        show='headings', height=5, selectmode='browse')
+        table_frame.pack(fill='x', pady=(0, 4))
+        cols = [('no', 'STT', 34), ('code', 'Mã', 58), ('name', 'Họ tên', 112),
+                ('unit', 'Đơn vị', 90), ('state', 'Trạng thái', 78)]
+        self.queue_table = ttk.Treeview(
+            table_frame,
+            columns=[v[0] for v in cols],
+            displaycolumns=('no', 'code', 'name', 'state', 'unit'),
+            show='headings',
+            height=4,
+            selectmode='browse',
+        )
         for key, label, width in cols:
             self.queue_table.heading(key, text=label)
-            self.queue_table.column(key, width=width, minwidth=50)
+            self.queue_table.column(key, width=width, minwidth=30 if key == 'no' else 48, stretch=False)
         self.queue_table.tag_configure('active', background='#FFF1A8', foreground='#1F2937')
         self.queue_table.tag_configure('scored', background='#E5F7E9', foreground='#22563A')
-        scroll = ttk.Scrollbar(table_frame, orient='vertical', command=self.queue_table.yview)
-        self.queue_table.configure(yscrollcommand=scroll.set)
-        self.queue_table.pack(side='left', fill='x', expand=True)
-        scroll.pack(side='right', fill='y')
+        vscroll = ttk.Scrollbar(table_frame, orient='vertical', command=self.queue_table.yview)
+        hscroll = ttk.Scrollbar(table_frame, orient='horizontal', command=self.queue_table.xview)
+        self.queue_table.configure(yscrollcommand=vscroll.set, xscrollcommand=hscroll.set)
+        table_frame.columnconfigure(0, weight=1)
+        self.queue_table.grid(row=0, column=0, sticky='ew')
+        vscroll.grid(row=0, column=1, sticky='ns')
+        hscroll.grid(row=1, column=0, sticky='ew')
+        ttk.Separator(panel, orient='horizontal').pack(fill='x', pady=(2, 2))
         self.queue_table.bind('<<TreeviewSelect>>', self.queue_on_table_select)
         self.queue_table.bind('<Double-1>', lambda event: self.guard(self.queue_choose_selected))
         if 'shooter_code' in getattr(self, 'vars', {}):
@@ -185,7 +193,7 @@ class ShooterQueue:
             for index, person in enumerate(state['people']):
                 is_active = has_active and index == active
                 done = person['code'] in scored
-                label = ('ĐANG TỚI LƯỢT • ĐÃ CHẤM' if done else '▶ ĐANG TỚI LƯỢT') if is_active else ('ĐÃ CHẤM' if done else 'CHỜ')
+                label = ('▶ Đã chấm' if done else '▶ Tới lượt') if is_active else ('Đã chấm' if done else 'Chờ')
                 tags = ('active',) if is_active else (('scored',) if done else ())
                 self.queue_table.insert('', 'end', iid=str(index),
                     values=(index + 1, person['code'], person['name'], person['unit'], label), tags=tags)

@@ -101,14 +101,19 @@ class ZoomCanvas(ttk.Frame):
 
 
 class ImagePreview(tk.Toplevel):
-    def __init__(self,app,kind):
-        super().__init__(app);self.app=app;self.kind=kind
-        self.title('Ảnh '+('TRƯỚC — lỗ cũ' if kind=='before' else 'SAU — lỗ cũ & mới'));self.geometry('1000x800')
+    def __init__(self,app,kind,editable=False):
+        super().__init__(app);self.app=app;self.kind=kind;self.editable=editable
+        self.title('Ảnh '+('TRƯỚC — lỗ cũ' if kind=='before' else 'SAU — lỗ cũ & mới')+(' (chỉ xem)' if not editable else ''));self.geometry('1000x800')
         self.edit_index=None;self.hole_dialog=None;self.hint=tk.StringVar()
-        self.default_hint='Giữ chuột PHẢI trên vòng và kéo: dời vòng; thả để tính lại điểm.\nChuột TRÁI: bấm lỗ để đổi màu / xóa, kéo để vẽ vòng mới. Chuột phải ở vùng trống: kéo ảnh. Cuộn: zoom. Escape: hủy kéo.' if kind=='after' else 'Lỗ cũ màu đỏ • Cuộn: zoom • Kéo: di chuyển'
+        if kind=='after' and editable:
+            self.default_hint='Giữ chuột PHẢI trên vòng và kéo: dời vòng; thả để tính lại điểm.\nChuột TRÁI: bấm lỗ để đổi màu / xóa, kéo để vẽ vòng mới. Chuột phải ở vùng trống: kéo ảnh. Cuộn: zoom. Escape: hủy kéo.'
+        elif kind=='after':
+            self.default_hint='Đỏ: lỗ cũ • Xanh: lỗ mới • Cuộn: zoom • Kéo: di chuyển • Bấm lỗ để đối chiếu (chỉ xem; chỉnh sửa kết quả tại giao diện web)'
+        else:
+            self.default_hint='Lỗ cũ màu đỏ • Cuộn: zoom • Kéo: di chuyển (chỉ xem)'
         self.hint.set(self.default_hint);ttk.Label(self,textvariable=self.hint,wraplength=950).pack(padx=10,pady=8)
-        self.zoom=ZoomCanvas(self,self.select_hole,self.save_circle if kind=='after' else None);self.zoom.pack(fill='both',expand=True,padx=8)
-        if kind=='after':self.zoom.on_drag_start=self.drag_start;self.zoom.on_move=self.move_circle
+        self.zoom=ZoomCanvas(self,self.select_hole,self.save_circle if (kind=='after' and editable) else None);self.zoom.pack(fill='both',expand=True,padx=8)
+        if kind=='after' and editable:self.zoom.on_drag_start=self.drag_start;self.zoom.on_move=self.move_circle
         self.bind('<Escape>',lambda e:self.cancel_edit())
         self.totals=tk.StringVar();ttk.Label(self,textvariable=self.totals).pack(pady=4)
         bar=ttk.Frame(self);bar.pack(pady=8)
@@ -145,7 +150,7 @@ class ImagePreview(tk.Toplevel):
             row=next((i for i,h in enumerate(self.app.result['detections']) if h.get('matched_before')==row),None)
         if row is not None and self.app.tree.exists(str(row)):
             self.app.tree.selection_set(str(row));self.app.tree.see(str(row));self.app.selection_changed()
-            if self.kind=='after':self.open_hole_dialog(row)
+            if self.kind=='after' and self.editable:self.open_hole_dialog(row)
     def open_hole_dialog(self,index):
         if self.hole_dialog and self.hole_dialog.winfo_exists():self.hole_dialog.destroy()
         self.cancel_edit();hole=self.app.result['detections'][index];label=hole_labels(self.app.result['detections'])[index]

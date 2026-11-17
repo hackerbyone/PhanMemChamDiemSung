@@ -170,6 +170,17 @@ class Store:
                     p=json.loads(raw);rev=p.get('revision',1);folder=self.root/ident/f'rev_{rev}'
                     if not folder.exists():folder=self.root/ident
                     images={n:base64.b64encode((folder/(n+'.png')).read_bytes()).decode() for n in ['before','after','annotated']}
+                    draft_dir=self.root/'drafts'/ident
+                    for kind in ('before','after'):
+                        orig=sorted(draft_dir.glob(kind+'_original.*'))
+                        if orig:
+                            raw_orig=orig[0].read_bytes()
+                            if orig[0].suffix.lower() not in ('.png','.jpg','.jpeg'):
+                                import cv2
+                                ok,buf=cv2.imencode('.png',read_image(orig[0]))
+                                if ok:raw_orig=buf.tobytes()
+                            b64=base64.b64encode(raw_orig).decode()
+                            if len(b64)<=24_000_000:images[kind+'_original']=b64
                     r=s.post(url+'/api/real-rounds',json={'result':p,'images':images},headers={'X-Manager-Token':token},timeout=120);r.raise_for_status()
                     if r.json().get('id')!=ident:raise ValueError('Server trả sai mã loạt')
                     # A correction saved while network was in flight must remain pending.

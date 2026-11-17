@@ -99,10 +99,15 @@ class Management:
         validate_config(config)
 
     def fill_identity(self,p):
-        for k in ('shooter_code','shooter','unit','lane','series'):self.vars[k].set(str(p.get(k) or (1 if k in ('lane','series') else '')))
-        self.vars['shooting_date'].set(shooting_day(p));self.vars['expected'].set('' if p.get('expected_shots') is None else str(p['expected_shots']))
-        self.vars['notes'].set(p.get('notes',''))
-        for entry in self.identity_entries:entry.configure(state='disabled')
+        self._updating_queue_ui=True
+        try:
+            for k in ('shooter_code','shooter','unit','lane','series'):self.vars[k].set(str(p.get(k) or (1 if k in ('lane','series') else '')))
+            self.vars['shooting_date'].set(shooting_day(p));self.vars['expected'].set('' if p.get('expected_shots') is None else str(p['expected_shots']))
+            self.vars['notes'].set(p.get('notes',''))
+            for entry in self.identity_entries:entry.configure(state='disabled')
+        finally:
+            self._updating_queue_ui=False
+        if hasattr(self,'queue_refresh'):self.queue_refresh()
 
     def open_history(self):
         selected=self.history_table.selection()
@@ -115,6 +120,8 @@ class Management:
         self.meta={k:copy.deepcopy(p[k]) for k in keys if k in p};self.meta.setdefault('shooting_date',shooting_day(p))
         self.before_image=images['before'];self.after_image=images['after'];self.refresh()
         self.refresh_images()
+        if hasattr(self,'refresh_original_buttons'):self.refresh_original_buttons()
+        if hasattr(self,'queue_update_header'):self.queue_update_header()
         if self.cap:self.cap.release();self.cap=None;self.frame=None
         self.notebook.select(0);self.status.set(f"Đã mở loạt {p.get('series')} / bệ {p.get('lane')} • phiên bản {p.get('revision',1)}. Sửa sẽ lưu thành phiên bản tiếp theo.")
 
@@ -198,6 +205,8 @@ class Management:
             self.before_image=images['before'];self.after_image=images['after']
             for i,n in enumerate(('before','after')):
                 if images[n] is not None:self.show(self.views[i],images[n])
+            if hasattr(self,'refresh_original_buttons'):self.refresh_original_buttons()
+            if hasattr(self,'queue_update_header'):self.queue_update_header()
             self.summary.set('Đã khôi phục ảnh nháp. '+('Bấm Tính lại / thử lại để xử lý.' if self.after_image is not None else 'Chụp ảnh sau khi kết thúc loạt.'))
             self.notebook.select(0);window.destroy()
         def archive():

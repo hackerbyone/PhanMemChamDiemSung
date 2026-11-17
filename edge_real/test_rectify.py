@@ -121,8 +121,13 @@ class OpenBeforeFlow(unittest.TestCase):
                   self.ask]:
             mock = p.start(); self.addCleanup(p.stop)
         self.ask = mock
-        self.app = app.App(); self.app.withdraw(); self.addCleanup(self.app.destroy)
+        self.app = app.App(); self.app.withdraw(); self.addCleanup(self.destroy_app)
         for k, v in {'shooter_code': 'T1', 'shooter': 'Test', 'unit': 'U'}.items(): self.app.vars[k].set(v)
+
+    def destroy_app(self):
+        for job in self.app.tk.call('after', 'info'):
+            self.app.after_cancel(job)
+        self.app.destroy()
 
     def open_before(self, image, name='photo.jpg'):
         path = Path(self.tmp.name) / name; cv2.imwrite(str(path), image)
@@ -133,18 +138,19 @@ class OpenBeforeFlow(unittest.TestCase):
     def test_rectified_before_and_original_view(self):
         template = read_image(ROOT / 'assets/Biaso4.png')
         photo, _ = fake_photo(template)
+        self.assertEqual(str(self.app.original_buttons['before'].cget('state')), 'disabled')
+        self.assertEqual(str(self.app.original_buttons['after'].cget('state')), 'disabled')
         with patch.object(self.mod.App, 'detect_before', lambda instance: None):
             self.open_before(photo)
         self.assertEqual(self.app.before_image.shape, template.shape)
         info = self.app.meta['before_rectification']
         self.assertGreaterEqual(info['inliers'], 15)
         self.assertTrue((self.store.root / 'drafts' / self.app.round_id / 'before_original.jpg').exists())
-        self.assertEqual(self.app.original_button.cget('text'), 'Xem ảnh gốc')
-        menu = self.app.original_menu()
-        self.assertEqual(menu.entrycget(0, 'state'), 'normal')
-        self.assertEqual(menu.entrycget(1, 'state'), 'disabled')  # chưa có ảnh sau
+        self.assertEqual(self.app.original_buttons['before'].cget('text'), 'Xem ảnh gốc')
+        self.assertEqual(str(self.app.original_buttons['before'].cget('state')), 'normal')
+        self.assertEqual(str(self.app.original_buttons['after'].cget('state')), 'disabled')  # chưa có ảnh sau
         self.app.before_original = None  # buộc đọc lại từ thư mục nháp
-        menu.invoke(0)
+        self.app.original_buttons['before'].invoke()
         window = self.app.zoom_windows['original_before']; window.update()
         self.assertEqual(window.image.shape, photo.shape)
         with self.assertRaises(ValueError):
@@ -152,8 +158,9 @@ class OpenBeforeFlow(unittest.TestCase):
         self.app.clear_round()  # như khi bấm Loạt tiếp theo
         self.assertFalse(window.winfo_exists())
         self.assertIsNone(self.app.before_original)
+        self.assertEqual(str(self.app.original_buttons['before'].cget('state')), 'disabled')
         with self.assertRaises(ValueError):
-            self.app.choose_original()
+            self.app.show_original('before')
 
     def test_after_photo_is_rectified_too(self):
         template = read_image(ROOT / 'assets/Biaso4.png')
@@ -167,10 +174,9 @@ class OpenBeforeFlow(unittest.TestCase):
         self.assertIsNotNone(self.app.rectification('before'))
         self.assertIsNotNone(self.app.rectification('after'))
         self.assertTrue((self.store.root / 'drafts' / self.app.round_id / 'after_original.jpg').exists())
-        menu = self.app.original_menu()
-        self.assertEqual([menu.entrycget(i, 'state') for i in (0, 1)], ['normal', 'normal'])
+        self.assertEqual([str(self.app.original_buttons[k].cget('state')) for k in ('before', 'after')], ['normal', 'normal'])
         self.app.after_original = None  # buộc đọc lại từ thư mục nháp
-        menu.invoke(1)
+        self.app.original_buttons['after'].invoke()
         window = self.app.zoom_windows['original_after']; window.update()
         self.assertEqual(window.image.shape, after_photo.shape)
         self.assertIn('sau', window.title())
@@ -180,8 +186,9 @@ class OpenBeforeFlow(unittest.TestCase):
         self.open_before(noise)
         self.assertTrue(self.ask.called)
         self.assertIsNone(self.app.before_image)
+        self.assertEqual(str(self.app.original_buttons['before'].cget('state')), 'disabled')
         with self.assertRaises(ValueError):
-            self.app.choose_original()
+            self.app.show_original('before')
 
 
 if __name__ == '__main__':
